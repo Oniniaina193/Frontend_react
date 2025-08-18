@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Package, Filter, ChevronLeft, ChevronRight, Loader, AlertCircle, ArrowLeft, Database, CheckCircle, RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Search, Package, Filter, ChevronLeft, ChevronRight, Loader, AlertCircle, ArrowLeft, Database, CheckCircle, RefreshCw, TrendingUp, TrendingDown, Minus, User } from 'lucide-react';
+import authService from '../services/authService';
 
-const ArticleSearchApp = ({ onBack }) => {
+const ArticleSearchApp = ({ onBack, onLogin }) => {
   const [articles, setArticles] = useState([]);
   const [families, setFamilies] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFamily, setSelectedFamily] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [connectionStatus, setConnectionStatus] = useState('unknown'); // 'ok', 'error', 'unknown'
+  const [connectionStatus, setConnectionStatus] = useState('unknown');
   const [connectionInfo, setConnectionInfo] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
   const [pagination, setPagination] = useState({
     current_page: 1,
     total_pages: 1,
@@ -17,6 +20,11 @@ const ArticleSearchApp = ({ onBack }) => {
     items_per_page: 20
   });
   const [debugInfo, setDebugInfo] = useState('');
+
+  // Vérifier l'authentification au démarrage
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
 
   // Tester la connexion Access au démarrage
   useEffect(() => {
@@ -41,6 +49,28 @@ const ArticleSearchApp = ({ onBack }) => {
     return () => clearTimeout(timer);
   }, [searchTerm, selectedFamily, connectionStatus]);
 
+  // Vérifier le statut d'authentification
+  const checkAuthStatus = async () => {
+    const authenticated = authService.isAuthenticated();
+    setIsAuthenticated(authenticated);
+    
+    if (authenticated) {
+      const user = authService.getUser();
+      setCurrentUser(user);
+    }
+  };
+
+  // Gérer le clic sur le bouton Login
+  const handleLoginClick = () => {
+    if (isAuthenticated) {
+      // Si déjà connecté, aller au dashboard
+      onLogin();
+    } else {
+      // Sinon, aller à la page de login
+      onLogin();
+    }
+  };
+
   // Test de connexion directe Access
   const testDirectConnection = async () => {
     setDebugInfo('Test de connexion Access...');
@@ -60,7 +90,6 @@ const ArticleSearchApp = ({ onBack }) => {
         setConnectionStatus('ok');
         setConnectionInfo(result.data);
         
-        // Mise à jour du debug avec les infos de stock
         const stockInfo = result.data.facturation_db;
         let debugMessage = `✅ Connexion OK - ${result.data.total_articles} articles`;
         
@@ -77,7 +106,6 @@ const ArticleSearchApp = ({ onBack }) => {
         setDebugInfo(`❌ Erreur connexion: ${result.message}`);
         setError(result.message);
         
-        // Si c'est un problème de sélection de dossier, suggérer de retourner
         if (result.message.includes('Aucun dossier sélectionné')) {
           setError(result.message + ' Cliquez sur "Retour" pour sélectionner un dossier.');
         }
@@ -133,7 +161,6 @@ const ArticleSearchApp = ({ onBack }) => {
         params.append('family', selectedFamily);
       }
 
-      // UTILISER direct-access au lieu de articles
       const response = await fetch(`/api/direct-access/search?${params}`, {
         headers: { 'Accept': 'application/json' }
       });
@@ -191,7 +218,6 @@ const ArticleSearchApp = ({ onBack }) => {
     return `${numPrice.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} Ar`;
   };
 
-  //Obtenir l'icône et la couleur selon le stock
   const getStockIcon = (status) => {
     switch (status) {
       case 'bon':
@@ -207,7 +233,6 @@ const ArticleSearchApp = ({ onBack }) => {
     }
   };
 
-  // Obtenir les classes CSS selon le statut du stock
   const getStockClasses = (status) => {
     switch (status) {
       case 'bon':
@@ -223,392 +248,339 @@ const ArticleSearchApp = ({ onBack }) => {
     }
   };
 
-  const getConnectionStatusIcon = () => {
-    switch (connectionStatus) {
-      case 'ok':
-        return <CheckCircle className="w-5 h-5 text-green-600" />;
-      case 'error':
-        return <AlertCircle className="w-5 h-5 text-red-600" />;
-      default:
-        return <Loader className="w-5 h-5 text-blue-600 animate-spin" />;
-    }
-  };
-
-  const getStatusColor = () => {
-    switch (connectionStatus) {
-      case 'ok':
-        return 'bg-green-50 border-green-200 text-green-700';
-      case 'error':
-        return 'bg-red-50 border-red-200 text-red-700';
-      default:
-        return 'bg-blue-50 border-blue-200 text-blue-700';
-    }
-  };return (
-  <div className="fixed inset-0 min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 overflow-auto">
-    <div className="w-full max-w-none h-full">
-      {/* Header avec logos et titre */}
-      <div className="bg-gray shadow-lg">
-        <div className="px-1 py-1">
-          <div className="flex items-center justify-between">
-           {/* Logo gauche */}
-           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-              <img 
-              src="/images/logoPharmacie.png" 
-              alt="Logo Pharmacie" 
-              className="w-17 h-17 object-contain"
-            />
+  return (
+    <div className="fixed inset-0 min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 overflow-auto">
+      <div className="w-full max-w-none h-full">
+        {/* Header avec logos et titre */}
+        <div className="bg-gray shadow-lg">
+          <div className="px-1 py-1">
+            <div className="flex items-center justify-between">
+              {/* Logo gauche */}
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                <img 
+                  src="/images/logoPharmacie.png" 
+                  alt="Logo Pharmacie" 
+                  className="w-17 h-17 object-contain"
+                />
+              </div>
+              
+              {/* Titre central */}
+              <h1 className="text-3xl font-bold text-black-500">GESTION PHARMACEUTIQUE</h1>
+              
+              {/* Bouton Login droite - MAINTENANT FONCTIONNEL */}
+              <div className="w-30 h-12 flex items-center justify-center">
+                <button 
+                  onClick={handleLoginClick}
+                  className="w-full h-full bg-red-500 hover:bg-red-600 text-white font-semibold rounded-md flex items-center justify-center space-x-2 transition-colors"
+                >
+                  <User className="w-4 h-4" />
+                  <span>{isAuthenticated ? currentUser?.name || 'Profil' : 'Login'}</span>
+                </button>
+              </div>
             </div>
-            
-            {/* Titre central */}
-            <h1 className="text-3xl font-bold text-black-500">GESTION PHARMACEUTIQUE</h1>
-            
-            {/* Bouton Login droite */}
-            <div className="w-30 h-12 flex items-center justify-center">
-            <button className="w-full h-full bg-red-500 hover:bg-red-600 text-white font-semibold rounded-md">
-              Login
-            </button>
-            </div>
-
           </div>
         </div>
-      </div>
 
-      {/* Contenu principal - maintenant pleine largeur sans padding */}
-      <div className="bg-white">
-        {/* Ancien header maintenant dans le contenu */}
-        <div className="px-6 py-2 border-b border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-             {/*<div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Package className="w-6 h-6 text-blue-600" />
+        {/* Contenu principal */}
+        <div className="bg-white">
+          <div className="px-6 py-2 border-b border-gray-200">
+            <div className="flex items-center justify-between mb-4">
+              {/* Status utilisateur (optionnel) */}
+              {isAuthenticated && (
+                <div className="text-sm text-green-600 font-medium">
+                  ✓ Connecté en tant que {currentUser?.name}
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-800 flex items-center space-x-2">
-                    <span>Recherche d'Articles</span>
-                    {getConnectionStatusIcon()}
-                  </h2>
-                </div>
-              </div>
+              )}
             </div>
-            
-            Bouton refresh 
-            <button
-              onClick={testDirectConnection}
-              disabled={connectionStatus === 'unknown'}
-              className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition-colors disabled:opacity-50"
-              title="Retester la connexion"
-            >
-              <RefreshCw className={`w-5 h-5 ${connectionStatus === 'unknown' ? 'animate-spin' : ''}`} />
-            </button>*/}
-          </div>
 
-          {/* Status de connexion 
-          <div className={`mb-4 p-3 border rounded-lg text-sm flex justify-between items-center ${getStatusColor()}`}>
-            <div className="flex items-center space-x-2">
-              <Database className="w-4 h-4" />
-              <span><strong>Status:</strong> {debugInfo}</span>
-            </div>
-            {connectionStatus === 'ok' && connectionInfo && (
-              <div className="text-xs">
-                📁 {connectionInfo.file_path ? connectionInfo.file_path.split('\\').pop() || connectionInfo.file_path.split('/').pop() : 'Base Access'}
-                {connectionInfo.facturation_db && connectionInfo.facturation_db.available && (
-                  <span className="ml-2 text-green-600">📊 Stocks disponibles</span>
-                )}
-              </div>
-            )}
-          </div>*/}
-
-          {/* Filtres de recherche */}
-          <div className="flex items-center gap-4">
-            <button
+            {/* Filtres de recherche */}
+            <div className="flex items-center gap-4">
+              <button
                 onClick={onBack}
                 className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-full transition-colors"
                 title="Retour à la sélection"
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
-            {/* Recherche par nom */}
-            <div className="flex items-center space-x-3 flex-1">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                Recherche par:
-              </label>
+
+              {/* Recherche par nom */}
+              <div className="flex items-center space-x-3 flex-1">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                  Recherche par:
+                </label>
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 w-3 h-3" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    placeholder="Ex: Doliprane, Aspirine..."
+                    disabled={connectionStatus !== 'ok'}
+                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Filtre par famille */}
               <div className="relative flex-1">
-                <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 w-3 h-3" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  placeholder="Ex: Doliprane, Aspirine..."
+                <Filter className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 w-3 h-3" />
+                <select
+                  value={selectedFamily}
+                  onChange={(e) => handleFamilyChange(e.target.value)}
                   disabled={connectionStatus !== 'ok'}
-                  className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors text-sm"
-                />
+                  className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors text-sm"
+                >
+                  <option value="">Toutes les familles</option>
+                  {families.map((family, index) => (
+                    <option key={index} value={family}>
+                      {family}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Statistiques */}
+              <div className={`rounded-lg px-4 py-2 transition-colors min-w-48 ${
+                connectionStatus === 'ok' ? 'bg-blue-50' : 
+                connectionStatus === 'error' ? 'bg-red-50' : 'bg-gray-50'
+              }`}>
+                <p className={`text-sm font-medium ${
+                  connectionStatus === 'ok' ? 'text-blue-700' : 
+                  connectionStatus === 'error' ? 'text-red-700' : 'text-gray-500'
+                }`}>
+                  {loading ? 'Recherche...' : 
+                   connectionStatus === 'ok' ? `${pagination.total_items} article(s)` : 
+                   connectionStatus === 'error' ? 'Connexion échouée' :
+                   'Connexion en cours...'}
+                </p>
+                <p className={`text-xs ${
+                  connectionStatus === 'ok' ? 'text-blue-600' : 
+                  connectionStatus === 'error' ? 'text-red-600' : 'text-gray-400'
+                }`}>
+                  {connectionStatus === 'ok' ? 
+                    `Page ${pagination.current_page} sur ${pagination.total_pages}` :
+                    connectionStatus === 'error' ? 'Accès indisponible' :
+                    'Initialisation ODBC...'}
+                </p>
               </div>
             </div>
-
-            {/* Filtre par famille */}
-            <div className="relative flex-1">
-              <Filter className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 w-3 h-3" />
-              <select
-                value={selectedFamily}
-                onChange={(e) => handleFamilyChange(e.target.value)}
-                disabled={connectionStatus !== 'ok'}
-                className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors text-sm"
-              >
-                <option value="">Toutes les familles</option>
-                {families.map((family, index) => (
-                  <option key={index} value={family}>
-                    {family}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Statistiques */}
-            <div className={`rounded-lg px-4 py-2 transition-colors min-w-48 ${
-              connectionStatus === 'ok' ? 'bg-blue-50' : 
-              connectionStatus === 'error' ? 'bg-red-50' : 'bg-gray-50'
-            }`}>
-              <p className={`text-sm font-medium ${
-                connectionStatus === 'ok' ? 'text-blue-700' : 
-                connectionStatus === 'error' ? 'text-red-700' : 'text-gray-500'
-              }`}>
-                {loading ? 'Recherche...' : 
-                 connectionStatus === 'ok' ? `${pagination.total_items} article(s)` : 
-                 connectionStatus === 'error' ? 'Connexion échouée' :
-                 'Connexion en cours...'}
-              </p>
-              <p className={`text-xs ${
-                connectionStatus === 'ok' ? 'text-blue-600' : 
-                connectionStatus === 'error' ? 'text-red-600' : 'text-gray-400'
-              }`}>
-                {connectionStatus === 'ok' ? 
-                  `Page ${pagination.current_page} sur ${pagination.total_pages}` :
-                  connectionStatus === 'error' ? 'Accès direct indisponible' :
-                  'Initialisation ODBC...'}
-              </p>
-            </div>
           </div>
-        </div>
 
-        {/* Message d'erreur */}
-        {error && (
-          <div className="px-6 py-4">
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <div className="flex items-start space-x-3">
-                <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium text-red-800">Problème de connexion</h3>
-                  <p className="text-sm text-red-700 mt-1">{error}</p>
-                  <div className="mt-3 flex space-x-2">
-                    {error.includes('Aucun dossier sélectionné') && (
+          {/* Message d'erreur */}
+          {error && (
+            <div className="px-6 py-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h3 className="text-sm font-medium text-red-800">Problème de connexion</h3>
+                    <p className="text-sm text-red-700 mt-1">{error}</p>
+                    <div className="mt-3 flex space-x-2">
+                      {error.includes('Aucun dossier sélectionné') && (
+                        <button
+                          onClick={onBack}
+                          className="text-sm bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200 transition-colors"
+                        >
+                          ← Retour à la sélection
+                        </button>
+                      )}
                       <button
-                        onClick={onBack}
+                        onClick={testDirectConnection}
                         className="text-sm bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200 transition-colors"
                       >
-                        ← Retour à la sélection
+                        🔄 Retenter
                       </button>
-                    )}
-                    <button
-                      onClick={testDirectConnection}
-                      className="text-sm bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200 transition-colors"
-                    >
-                      🔄 Retenter
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Résultats de recherche - Header du tableau */}
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex justify-center items-center">
-            <h3 className="text-2xl font-semibold text-gray-800">
-              Listes des médicaments
-            </h3>
-          </div>
-        </div>
-
-        {/* Contenu du tableau */}
-        {connectionStatus === 'unknown' ? (
-          <div className="text-center py-16">
-            <Loader className="w-16 h-16 text-blue-600 mx-auto mb-4 animate-spin" />
-            <p className="text-gray-500 text-xl mb-2">Initialisation de la connexion ODBC</p>
-            <p className="text-gray-400">
-              Test de la connexion directe à la base Access...
-            </p>
-          </div>
-        ) : connectionStatus === 'error' ? (
-          <div className="text-center py-16">
-            <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-            <p className="text-gray-500 text-xl mb-2">Connexion Access indisponible</p>
-            <p className="text-gray-400 mb-6">
-              Impossible d'établir une connexion directe à la base Access
-            </p>
-            <div className="space-y-2">
-              <button
-                onClick={testDirectConnection}
-                className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors mr-4 text-lg"
-              >
-                🔄 Retenter la connexion
-              </button>
-              <button
-                onClick={onBack}
-                className="bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition-colors text-lg"
-              >
-                ← Changer de dossier
-              </button>
-            </div>
-          </div>
-        ) : loading ? (
-          <div className="flex items-center justify-center py-16">
-            <Loader className="w-8 h-8 animate-spin text-blue-600" />
-            <span className="ml-3 text-gray-600 text-lg">Recherche en cours...</span>
-          </div>
-        ) : articles.length === 0 ? (
-          <div className="text-center py-16">
-            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500 text-xl mb-2">Aucun article trouvé</p>
-            <p className="text-gray-400">
-              {searchTerm || selectedFamily ? 
-                'Essayez de modifier vos critères de recherche' : 
-                'Saisissez un terme de recherche pour commencer'}
-            </p>
-          </div>
-        ) : (
-          <>
-            {/* Tableau des résultats AVEC COLONNE STOCK */}
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
-                      Code
-                    </th>
-                    <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
-                      Libellé
-                    </th>
-                    <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
-                      Famille
-                    </th>
-                    <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
-                      Prix
-                    </th>
-                    <th className="px-3 py-2 text-sm font-medium text-gray-500 uppercase tracking-wider border border-black">
-                      <div className="flex items-center justify-center space-x-1">  
-                        <span>Stock</span>
-                      </div>
-                    </th>
-
-                  </tr>
-                </thead>
-                <tbody className="bg-white">
-                  {articles.map((article, index) => (
-                    <tr key={`${article.code}-${index}`} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-black-600 border border-black">
-                        {article.code || 'N/A'}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-gray-900 border border-black">
-                        <div className="max-w-xs">
-                          <p className="font-medium truncate" title={article.libelle}>
-                            {article.libelle || 'Sans nom'}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-800 border border-black">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-white text-black">
-                          {article.famille || 'N/A'}
-                        </span>
-                      </td>
-
-                      <td className="px-3 py-2 whitespace-nowrap text-sm font-semibold text-black-600 border border-black">
-                        {formatPrice(article.prix_ttc)}
-                      </td>
-                      <td className="px-3 py-2 whitespace-nowrap text-sm border border-black">
-                        <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getStockClasses(article.stock_status)}`}>
-                          {getStockIcon(article.stock_status)}
-                          <span className="ml-1.5 font-semibold">
-                            {article.stock}
-                          </span>
-                          <span className="ml-1">
-                            {article.stock > 1 ? 'unités' : 'unité'}
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination */}
-            {pagination.total_pages > 1 && (
-              <div className="px-6 py-4 border-t border-gray-200">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-gray-700">
-                    Affichage de{' '}
-                    <span className="font-medium">
-                      {((pagination.current_page - 1) * pagination.items_per_page) + 1}
-                    </span>{' '}
-                    à{' '}
-                    <span className="font-medium">
-                      {Math.min(pagination.current_page * pagination.items_per_page, pagination.total_items)}
-                    </span>{' '}
-                    sur{' '}
-                    <span className="font-medium">{pagination.total_items}</span> résultats
-                  </p>
-
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => handlePageChange(pagination.current_page - 1)}
-                      disabled={!pagination.has_prev || loading}
-                      className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-
-                    <div className="flex items-center space-x-1">
-                      {Array.from({ length: Math.min(5, pagination.total_pages) }, (_, i) => {
-                        const pageNum = i + Math.max(1, pagination.current_page - 2);
-                        if (pageNum <= pagination.total_pages) {
-                          return (
-                            <button
-                              key={pageNum}
-                              onClick={() => handlePageChange(pageNum)}
-                              disabled={loading}
-                              className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                                pageNum === pagination.current_page
-                                  ? 'bg-blue-600 text-white'
-                                  : 'text-gray-700 hover:bg-gray-100 disabled:opacity-50'
-                              }`}
-                            >
-                              {pageNum}
-                            </button>
-                          );
-                        }
-                        return null;
-                      })}
                     </div>
-
-                    <button
-                      onClick={() => handlePageChange(pagination.current_page + 1)}
-                      disabled={!pagination.has_next || loading}
-                      className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
                   </div>
                 </div>
               </div>
-            )}
-          </>
-        )}
+            </div>
+          )}
+
+          {/* Résultats de recherche - Header du tableau */}
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex justify-center items-center">
+              <h3 className="text-2xl font-semibold text-gray-800">
+                Listes des médicaments
+              </h3>
+            </div>
+          </div>
+
+          {/* Contenu du tableau */}
+          {connectionStatus === 'unknown' ? (
+            <div className="text-center py-16">
+              <Loader className="w-16 h-16 text-blue-600 mx-auto mb-4 animate-spin" />
+              <p className="text-gray-500 text-xl mb-2">Initialisation de la connexion ODBC</p>
+              <p className="text-gray-400">
+                Test de la connexion directe à la base Access...
+              </p>
+            </div>
+          ) : connectionStatus === 'error' ? (
+            <div className="text-center py-16">
+              <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+              <p className="text-gray-500 text-xl mb-2">Connexion Access indisponible</p>
+              <div className="space-y-2">
+                <button
+                  onClick={testDirectConnection}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors mr-4 text-lg"
+                >
+                  🔄 Retenter la connexion
+                </button>
+                <button
+                  onClick={onBack}
+                  className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors text-lg"
+                >
+                  ← Changer de dossier
+                </button>
+              </div>
+            </div>
+          ) : loading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader className="w-8 h-8 animate-spin text-blue-600" />
+              <span className="ml-3 text-gray-600 text-lg">Recherche en cours...</span>
+            </div>
+          ) : articles.length === 0 ? (
+            <div className="text-center py-16">
+              <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500 text-xl mb-2">Aucun article trouvé</p>
+              <p className="text-gray-400">
+                {searchTerm || selectedFamily ? 
+                  'Essayez de modifier vos critères de recherche' : 
+                  'Saisissez un terme de recherche pour commencer'}
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Tableau des résultats */}
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
+                        Code
+                      </th>
+                      <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
+                        Libellé
+                      </th>
+                      <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
+                        Famille
+                      </th>
+                      <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
+                        Prix
+                      </th>
+                      <th className="px-3 py-2 text-sm font-medium text-gray-500 uppercase tracking-wider border border-black">
+                        <div className="flex items-center justify-center space-x-1">  
+                          <span>Stock</span>
+                        </div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    {articles.map((article, index) => (
+                      <tr key={`${article.code}-${index}`} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-black-600 border border-black">
+                          {article.code || 'N/A'}
+                        </td>
+                        <td className="px-3 py-2 text-sm text-gray-900 border border-black">
+                          <div className="max-w-xs">
+                            <p className="font-medium truncate" title={article.libelle}>
+                              {article.libelle || 'Sans nom'}
+                            </p>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-sm text-gray-900 border border-black">
+                          <div className="max-w-xs">
+                            <p className="font-medium truncate" title={article.famille}>
+                              {article.famille || 'N/A'}
+                            </p>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm font-semibold text-black-600 border border-black">
+                          {formatPrice(article.prix_ttc)}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-sm border border-black">
+                          <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getStockClasses(article.stock_status)}`}>
+                            {getStockIcon(article.stock_status)}
+                            <span className="ml-1.5 font-semibold">
+                              {article.stock}
+                            </span>
+                            <span className="ml-1">
+                              {article.stock > 1 ? 'unités' : 'unité'}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {pagination.total_pages > 1 && (
+                <div className="px-6 py-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-700">
+                      Affichage de{' '}
+                      <span className="font-medium">
+                        {((pagination.current_page - 1) * pagination.items_per_page) + 1}
+                      </span>{' '}
+                      à{' '}
+                      <span className="font-medium">
+                        {Math.min(pagination.current_page * pagination.items_per_page, pagination.total_items)}
+                      </span>{' '}
+                      sur{' '}
+                      <span className="font-medium">{pagination.total_items}</span> résultats
+                    </p>
+
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => handlePageChange(pagination.current_page - 1)}
+                        disabled={!pagination.has_prev || loading}
+                        className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+
+                      <div className="flex items-center space-x-1">
+                        {Array.from({ length: Math.min(5, pagination.total_pages) }, (_, i) => {
+                          const pageNum = i + Math.max(1, pagination.current_page - 2);
+                          if (pageNum <= pagination.total_pages) {
+                            return (
+                              <button
+                                key={pageNum}
+                                onClick={() => handlePageChange(pageNum)}
+                                disabled={loading}
+                                className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                                  pageNum === pagination.current_page
+                                    ? 'bg-blue-600 text-white'
+                                    : 'text-gray-700 hover:bg-gray-100 disabled:opacity-50'
+                                }`}
+                              >
+                                {pageNum}
+                              </button>
+                            );
+                          }
+                          return null;
+                        })}
+                      </div>
+
+                      <button
+                        onClick={() => handlePageChange(pagination.current_page + 1)}
+                        disabled={!pagination.has_next || loading}
+                        className="p-2 text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
 };
 
 export default ArticleSearchApp;
