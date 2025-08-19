@@ -99,7 +99,7 @@ const Medicaments = () => {
     }));
   };
 
-  // Ajouter un médicament
+  // Ajouter un médicament 
   const handleAjouter = async () => {
     if (!nouveauMedicament.nom.trim() || !nouveauMedicament.famille.trim()) {
       setError('Veuillez remplir tous les champs');
@@ -117,10 +117,28 @@ const Medicaments = () => {
       });
 
       if (response.success) {
+        //Mise à jour du tableau
+        const newMedicament = {
+          id: response.data.id || Date.now(), 
+          nom: nouveauMedicament.nom.trim(),
+          famille: nouveauMedicament.famille.trim()
+        };
+
+        setMedicaments(prev => [newMedicament, ...prev]);
+        
+        // Mettre à jour la pagination
+        setPagination(prev => ({
+          ...prev,
+          total: prev.total + 1
+        }));
+
+        // Mettre à jour les familles si nouvelle famille
+        if (!families.includes(nouveauMedicament.famille.trim())) {
+          setFamilies(prev => [...prev, nouveauMedicament.famille.trim()]);
+        }
+
         setNouveauMedicament({ nom: '', famille: '' });
         setSuccess('Médicament ajouté avec succès !');
-        loadMedicaments(1);
-        loadFamilies();
         
         setTimeout(() => setSuccess(''), 3000);
       }
@@ -171,11 +189,21 @@ const Medicaments = () => {
       });
 
       if (response.success) {
+        // Mise à jour du tableau
+        setMedicaments(prev => prev.map(med => 
+          med.id === id 
+            ? { ...med, nom: editingData.nom.trim(), famille: editingData.famille.trim() }
+            : med
+        ));
+
+        // Mettre à jour les familles si nouvelle famille
+        if (!families.includes(editingData.famille.trim())) {
+          setFamilies(prev => [...prev, editingData.famille.trim()]);
+        }
+
         setSuccess('Médicament modifié avec succès !');
         setEditingId(null);
         setEditingData({ nom: '', famille: '' });
-        loadMedicaments(pagination.current_page);
-        loadFamilies();
         setTimeout(() => setSuccess(''), 3000);
       } else {
         setError(response.message || 'Erreur lors de la modification');
@@ -185,7 +213,7 @@ const Medicaments = () => {
     }
   };
 
-  // Supprimer un médicament
+  // Supprimer un médicament 
   const handleSupprimer = async (medicament) => {
     if (!confirm(`Êtes-vous sûr de vouloir supprimer "${medicament.nom}" ?`)) {
       return;
@@ -198,9 +226,16 @@ const Medicaments = () => {
       const response = await medicamentService.deleteMedicament(medicament.id);
 
       if (response.success) {
+        // Mise à jour du tableau
+        setMedicaments(prev => prev.filter(med => med.id !== medicament.id));
+        
+        // Mettre à jour la pagination
+        setPagination(prev => ({
+          ...prev,
+          total: prev.total - 1
+        }));
+
         setSuccess('Médicament supprimé avec succès !');
-        loadMedicaments(pagination.current_page);
-        loadFamilies();
         setTimeout(() => setSuccess(''), 3000);
       } else {
         setError(response.message || 'Erreur lors de la suppression');
@@ -222,11 +257,9 @@ const Medicaments = () => {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Titre plus proche */}
-      <h2 className="text-3xl font-bold text-gray-900 mb-1">Gestion des Médicaments</h2>
+    <div className="space-y-3">
+      <h2 className="text-3xl font-bold text-gray-900 mb-0">Gestion des Médicaments</h2>
 
-      {/* Messages d'état */}
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <div className="flex items-start justify-between">
@@ -256,85 +289,52 @@ const Medicaments = () => {
       )}
 
       {/* Formulaire d'ajout */}
-      <div className="bg-white p-6 rounded-lg shadow border">
-        <div className="flex items-end gap-4">
-          <div className="flex-1">
-            <input
-              type="text"
-              value={nouveauMedicament.nom}
-              onChange={(e) => handleInputChange('nom', e.target.value)}
-              placeholder="Nom du médicament"
-              disabled={submitting}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-            />
-          </div>
-          
-          <div className="flex-1">
-            <input
-              type="text"
-              value={nouveauMedicament.famille}
-              onChange={(e) => handleInputChange('famille', e.target.value)}
-              placeholder="Famille médicament"
-              disabled={submitting}
-              className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-              list="families-list"
-            />
-            <datalist id="families-list">
-              {families.map((famille, index) => (
-                <option key={index} value={famille} />
-              ))}
-            </datalist>
-          </div>
-          
-          <button
-            onClick={handleAjouter}
-            disabled={submitting || !nouveauMedicament.nom.trim() || !nouveauMedicament.famille.trim()}
-            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-2 rounded-md font-medium transition-colors flex items-center"
-          >
-            {submitting ? (
-              <>
-                <Loader className="w-4 h-4 mr-2 animate-spin" />
-                Ajout...
-              </>
-            ) : (
-              'Ajouter'
-            )}
-          </button>
+      <div className="flex items-end gap-4">
+        <div className="flex-1">
+          <input
+            type="text"
+            value={nouveauMedicament.nom}
+            onChange={(e) => handleInputChange('nom', e.target.value)}
+            placeholder="Nom du médicament"
+            disabled={submitting}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+          />
         </div>
+        
+        <div className="flex-1">
+          <input
+            type="text"
+            value={nouveauMedicament.famille}
+            onChange={(e) => handleInputChange('famille', e.target.value)}
+            placeholder="Famille médicament"
+            disabled={submitting}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+            list="families-list"
+          />
+          <datalist id="families-list">
+            {families.map((famille, index) => (
+              <option key={index} value={famille} />
+            ))}
+          </datalist>
+        </div>
+        
+        <button
+          onClick={handleAjouter}
+          disabled={submitting || !nouveauMedicament.nom.trim() || !nouveauMedicament.famille.trim()}
+          className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-2 rounded-md font-medium transition-colors flex items-center"
+        >
+          {submitting ? (
+            <>
+              <Loader className="w-4 h-4 mr-2 animate-spin" />
+              Ajout...
+            </>
+          ) : (
+            'Ajouter'
+          )}
+        </button>
       </div>
 
-      {/* Filtres de recherche 
-      <div>
-        <div className="flex gap-4">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Rechercher un médicament..."
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-          </div>
-          
-          <div className="flex-1">
-            <select
-              value={selectedFamily}
-              onChange={(e) => setSelectedFamily(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">Toutes les familles</option>
-              {families.map((famille, index) => (
-                <option key={index} value={famille}>{famille}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div> */}
-
-      {/* Tableau des médicaments avec bordures noires */}
+      {/* Tableau des médicaments */}
       <div className="bg-white shadow rounded-lg border border-black overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-8">
@@ -343,7 +343,7 @@ const Medicaments = () => {
           </div>
         ) : (
           <>
-            <table className="min-w-full border-collapse">
+            <table className="min-w-full border border-black">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border border-black">
@@ -360,7 +360,7 @@ const Medicaments = () => {
               <tbody className="bg-white">
                 {medicaments.map((med) => (
                   <tr key={med.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-2 text-sm border border-black">
+                    <td className="px-2 py-1 text-sm border border-black text-center">
                       {editingId === med.id ? (
                         <input
                           type="text"
@@ -372,7 +372,7 @@ const Medicaments = () => {
                         <span className="font-medium text-gray-900">{med.nom}</span>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-sm border border-black">
+                    <td className="px-2 py-1 text-sm border border-black text-center">
                       {editingId === med.id ? (
                         <input
                           type="text"
@@ -387,9 +387,9 @@ const Medicaments = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-2 text-sm border border-black">
+                    <td className="px-2 py-1 text-sm border border-black">
                       {editingId === med.id ? (
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center justify-center space-x-2">
                           <button
                             onClick={() => handleSaveEdit(med.id)}
                             className="text-green-600 hover:text-green-800 flex items-center"
@@ -406,7 +406,7 @@ const Medicaments = () => {
                           </button>
                         </div>
                       ) : (
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center justify-center space-x-2">
                           <button
                             onClick={() => handleStartEdit(med)}
                             className="text-blue-600 hover:text-blue-800 flex items-center"

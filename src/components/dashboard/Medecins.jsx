@@ -17,9 +17,9 @@ const Medecins = () => {
     last_page: 1
   });
 
-  const perPage = 8; // Nombre de cartes par page
+  const perPage = 8;
 
-  // Charger la liste des médecins avec pagination et recherche
+  // Charger la liste des médecins
   const fetchMedecins = async (page = 1, searchTerm = '') => {
     try {
       const data = await medecinService.getMedecins({
@@ -38,12 +38,10 @@ const Medecins = () => {
     fetchMedecins();
   }, []);
 
-  // Gestion des champs du formulaire
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // Soumission formulaire
   const handleSubmit = async () => {
     try {
       if (editingId) {
@@ -56,11 +54,10 @@ const Medecins = () => {
       setEditingId(null);
       fetchMedecins(pagination.current_page, search);
     } catch (error) {
-      console.error('Erreur lors de l\'enregistrement:', error);
+      console.error("Erreur lors de l'enregistrement:", error);
     }
   };
 
-  // Préparer le formulaire pour modification
   const handleEdit = (medecin) => {
     setFormData({
       nom_complet: medecin.nom_complet,
@@ -72,7 +69,6 @@ const Medecins = () => {
     setShowForm(true);
   };
 
-  // Supprimer un médecin
   const handleDelete = async (id) => {
     if (window.confirm('Voulez-vous vraiment supprimer ce médecin ?')) {
       try {
@@ -84,19 +80,16 @@ const Medecins = () => {
     }
   };
 
-  // Gestion de la recherche
   const handleSearch = (e) => {
     const value = e.target.value;
     setSearch(value);
-    fetchMedecins(1, value); // Rechercher à partir de la première page
+    fetchMedecins(1, value);
   };
 
-  // Changer de page
   const handlePageChange = (newPage) => {
     fetchMedecins(newPage, search);
   };
 
-  // Générer les boutons de pagination
   const renderPagination = () => {
     const pages = [];
     for (let i = 1; i <= pagination.last_page; i++) {
@@ -114,7 +107,8 @@ const Medecins = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Header */}
       <div className="flex justify-between items-center">
         <h2 className="text-3xl font-bold text-gray-900">Gestion des Médecins</h2>
         <div className="flex space-x-2">
@@ -126,7 +120,11 @@ const Medecins = () => {
             className="border border-gray-300 rounded-md px-3 py-2"
           />
           <button
-            onClick={() => { setShowForm(!showForm); setEditingId(null); setFormData({ nom_complet: '', adresse: '', ONM: '', telephone: '' }); }}
+            onClick={() => { 
+              setShowForm(true); 
+              setEditingId(null); 
+              setFormData({ nom_complet: '', adresse: '', ONM: '', telephone: '' }); 
+            }}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md"
           >
             Ajouter un médecin
@@ -134,106 +132,110 @@ const Medecins = () => {
         </div>
       </div>
 
-      {/* Formulaire d'ajout/modification */}
+      {/* Carte des médecins */}
+      <div className={`${showForm ? 'blur-sm opacity-60 pointer-events-none' : ''}`}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+          {medecins.map((medecin) => (
+            <div key={medecin.id} className="bg-white overflow-hidden shadow rounded-lg h-59">
+              <div className="px-4 py-3 sm:p-4">
+                <div className="flex items-center">
+                  <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                    <span className="text-white font-medium">
+                      {medecin.nom_complet.split(' ')[1]?.charAt(0) || 'M'}
+                    </span>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-lg font-medium text-gray-900">Dr {medecin.nom_complet}</h3>
+                    <p className="text-sm text-gray-500">Adresse: {medecin.adresse}</p>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-1 text-sm text-gray-600">
+                  <p>📞 {medecin.telephone}</p>
+                  <p>ONM: {medecin.ONM}</p>
+                </div>
+                <div className="mt-3 flex space-x-2 text-sm">
+                  <button
+                    onClick={() => handleEdit(medecin)}
+                    className="text-blue-600 hover:text-blue-900"
+                  >
+                    Modifier
+                  </button>
+                  <button
+                    onClick={() => handleDelete(medecin.id)}
+                    className="text-red-600 hover:text-red-900"
+                  >
+                    Supprimer
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+          <br />
+        {/* Pagination */}
+        <div className="flex justify-center space-x-2 mt-4">
+          {renderPagination()}
+        </div>
+      </div>
+
+      {/* Formulaire d'ajout*/}
       {showForm && (
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">{editingId ? 'Modifier médecin' : 'Nouveau médecin'}</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input
-              type="text"
-              name="nom_complet"
-              value={formData.nom_complet}
-              onChange={handleChange}
-              placeholder="Nom complet"
-              className="border border-gray-300 rounded-md px-3 py-2"
-            />
-            <input
-              type="text"
-              name="adresse"
-              value={formData.adresse}
-              onChange={handleChange}
-              placeholder="Adresse"
-              className="border border-gray-300 rounded-md px-3 py-2"
-            />
-            <input
-              type="text"
-              name="ONM"
-              value={formData.ONM}
-              onChange={handleChange}
-              placeholder="ONM"
-              className="border border-gray-300 rounded-md px-3 py-2"
-            />
-            <input
-              type="tel"
-              name="telephone"
-              value={formData.telephone}
-              onChange={handleChange}
-              placeholder="Téléphone"
-              className="border border-gray-300 rounded-md px-3 py-2"
-            />
-          </div>
-          <div className="mt-4 flex space-x-2">
-            <button
-              onClick={handleSubmit}
-              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md"
-            >
-              {editingId ? 'Modifier' : 'Ajouter'}
-            </button>
-            <button
-              onClick={() => { setShowForm(false); setEditingId(null); }}
-              className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md"
-            >
-              Annuler
-            </button>
+        <div className="absolute inset-0 flex items-start justify-center mt-10 z-20">
+          <div className="bg-white w-full max-w-lg p-6 rounded-lg shadow-lg relative">
+            <h3 className="text-lg font-medium text-gray-900 mb-4 text-center">
+              {editingId ? 'Modifier médecin' : 'Nouveau médecin'}
+            </h3>
+            <div className="space-y-4">
+              <input
+                type="text"
+                name="nom_complet"
+                value={formData.nom_complet}
+                onChange={handleChange}
+                placeholder="Nom complet"
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
+              />
+              <input
+                type="text"
+                name="adresse"
+                value={formData.adresse}
+                onChange={handleChange}
+                placeholder="Adresse"
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
+              />
+              <input
+                type="text"
+                name="ONM"
+                value={formData.ONM}
+                onChange={handleChange}
+                placeholder="Numéro d'ordre"
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
+              />
+              <input
+                type="tel"
+                name="telephone"
+                value={formData.telephone}
+                onChange={handleChange}
+                placeholder="Téléphone"
+                className="w-full border border-gray-300 rounded-md px-3 py-2"
+              />
+              <div className="flex space-x-2 pt-2">
+                <button
+                  onClick={handleSubmit}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md"
+                >
+                  {editingId ? 'Modifier' : 'Ajouter'}
+                </button>
+                <button
+                  onClick={() => { setShowForm(false); setEditingId(null); }}
+                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
-
-      {/* Cartes des médecins */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-        {medecins.map((medecin) => (
-        <div key={medecin.id} className="bg-white overflow-hidden shadow rounded-lg h-51"> {/* Hauteur réduite */}
-            <div className="px-4 py-3 sm:p-4"> {/* Padding réduit pour diminuer hauteur */}
-                <div className="flex items-center">
-                    <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
-                            <span className="text-white font-medium">
-                                {medecin.nom_complet.split(' ')[1]?.charAt(0) || 'M'}
-                            </span>
-                        </div>
-                    </div>
-                    <div className="ml-3">
-                    <h3 className="text-lg font-medium text-gray-900">{medecin.nom_complet}</h3>
-                    <p className="text-sm text-gray-500">{medecin.adresse}</p>
-                    </div>
-                </div>
-                <div className="mt-3 space-y-1 text-sm text-gray-600">
-                    <p>📞 {medecin.telephone}</p>
-                    <p>ONM: {medecin.ONM}</p>
-                </div>
-                <div className="mt-3 flex space-x-2 text-sm">
-                <button
-                    onClick={() => handleEdit(medecin)}
-                    className="text-blue-600 hover:text-blue-900"
-                >
-                 Modifier
-                </button>
-                <button
-                    onClick={() => handleDelete(medecin.id)}
-                    className="text-red-600 hover:text-red-900"
-                >
-                    Supprimer
-                </button>
-                </div>
-            </div>
-        </div>
-        ))}
-    </div>
-
-      {/* Pagination */}
-      <div className="flex justify-center space-x-2 mt-4">
-        {renderPagination()}
-      </div>
     </div>
   );
 };

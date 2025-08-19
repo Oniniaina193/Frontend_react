@@ -63,15 +63,13 @@ const ArticleSearchApp = ({ onBack, onLogin }) => {
   // Gérer le clic sur le bouton Login
   const handleLoginClick = () => {
     if (isAuthenticated) {
-      // Si déjà connecté, aller au dashboard
       onLogin();
     } else {
-      // Sinon, aller à la page de login
       onLogin();
     }
   };
 
-  // Test de connexion directe Access
+  // Test de connexion Access
   const testDirectConnection = async () => {
     setDebugInfo('Test de connexion Access...');
     setConnectionStatus('unknown');
@@ -137,7 +135,7 @@ const ArticleSearchApp = ({ onBack, onLogin }) => {
     }
   };
 
-  // Rechercher des articles avec accès direct
+  // Rechercher des articles 
   const searchArticles = useCallback(async (page = 1) => {
     if (connectionStatus !== 'ok') {
       return;
@@ -401,7 +399,7 @@ const ArticleSearchApp = ({ onBack, onLogin }) => {
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex justify-center items-center">
               <h3 className="text-2xl font-semibold text-gray-800">
-                Listes des médicaments
+                Listes des articles
               </h3>
             </div>
           </div>
@@ -412,7 +410,7 @@ const ArticleSearchApp = ({ onBack, onLogin }) => {
               <Loader className="w-16 h-16 text-blue-600 mx-auto mb-4 animate-spin" />
               <p className="text-gray-500 text-xl mb-2">Initialisation de la connexion ODBC</p>
               <p className="text-gray-400">
-                Test de la connexion directe à la base Access...
+                Test de la connexion à la base Access...
               </p>
             </div>
           ) : connectionStatus === 'error' ? (
@@ -456,16 +454,16 @@ const ArticleSearchApp = ({ onBack, onLogin }) => {
                 <table className="w-full border-collapse">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
+                      <th className="px-3 py-2  text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
                         Code
                       </th>
-                      <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
+                      <th className="px-3 py-2 text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
                         Libellé
                       </th>
-                      <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
+                      <th className="px-3 py-2  text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
                         Famille
                       </th>
-                      <th className="px-3 py-2 text-left text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
+                      <th className="px-3 py-2 text-sm font-medium text-gray-500 uppercase tracking-wider border border-black text-center">
                         Prix
                       </th>
                       <th className="px-3 py-2 text-sm font-medium text-gray-500 uppercase tracking-wider border border-black">
@@ -478,27 +476,27 @@ const ArticleSearchApp = ({ onBack, onLogin }) => {
                   <tbody className="bg-white">
                     {articles.map((article, index) => (
                       <tr key={`${article.code}-${index}`} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-black-600 border border-black">
+                        <td className="px-2 py-1 whitespace-nowrap text-sm font-medium text-black-600 border border-black">
                           {article.code || 'N/A'}
                         </td>
-                        <td className="px-3 py-2 text-sm text-gray-900 border border-black">
+                        <td className="px-2 py-1 text-sm text-gray-900 border border-black">
                           <div className="max-w-xs">
                             <p className="font-medium truncate" title={article.libelle}>
                               {article.libelle || 'Sans nom'}
                             </p>
                           </div>
                         </td>
-                        <td className="px-3 py-2 text-sm text-gray-900 border border-black">
+                        <td className="px-2 py-1 text-sm text-gray-900 border border-black">
                           <div className="max-w-xs">
-                            <p className="font-medium truncate" title={article.famille}>
+                            <p className="font-medium truncate " title={article.famille}>
                               {article.famille || 'N/A'}
                             </p>
                           </div>
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm font-semibold text-black-600 border border-black">
+                        <td className="px-2 py-1 whitespace-nowrap text-sm font-semibold text-black-600 border border-black">
                           {formatPrice(article.prix_ttc)}
                         </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-sm border border-black">
+                        <td className="px-2 py-1 whitespace-nowrap text-sm border border-black">
                           <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getStockClasses(article.stock_status)}`}>
                             {getStockIcon(article.stock_status)}
                             <span className="ml-1.5 font-semibold">

@@ -32,7 +32,7 @@ const FolderSelectionApp = ({ onContinue }) => {
           setFolderPath(data.data.folder_path || data.data.access_file_path);
           setFolderInfo(data.data);
           setIsSelected(true);
-          setDebugInfo(`✅ Sélection trouvée: ${data.data.folder_name} (accès direct)`);
+          setDebugInfo(`✅ Sélection trouvée: ${data.data.folder_name}`);
         } else {
           setDebugInfo('Aucune sélection trouvée');
           setIsSelected(false);
@@ -76,11 +76,11 @@ const FolderSelectionApp = ({ onContinue }) => {
     }
   };
 
-  // VERSION SIMPLIFIÉE - ACCÈS DIRECT UNIQUEMENT
+  // VERSION SIMPLIFIÉE 
   const handleDirectFolderSelection = () => {
     setError('');
     setIsLoading(true);
-    setDebugInfo('Sélection de dossier pour accès direct...');
+    setDebugInfo('Sélection de dossier...');
 
     const input = document.createElement('input');
     input.type = 'file';
@@ -117,9 +117,9 @@ const FolderSelectionApp = ({ onContinue }) => {
           firstFile.path.replace(/[\\\/][^\\\/]*$/, '') : // Enlever le nom du fichier
           `Dossier: ${folderName}`; // Fallback si pas de chemin complet
 
-        setDebugInfo(`Tentative d'accès direct: ${folderName}`);
+        setDebugInfo(`Tentative d'accès: ${folderName}`);
 
-        // UNIQUEMENT L'ACCÈS DIRECT - PAS D'UPLOAD
+        // UNIQUEMENT L'ACCÈS DIRECT
         const response = await fetch('/api/folder-selection/select', {
           method: 'POST',
           headers: {
@@ -129,14 +129,13 @@ const FolderSelectionApp = ({ onContinue }) => {
           body: JSON.stringify({
             folder_path: folderFullPath,
             folder_name: folderName,
-            access_method: 'direct_only' // Forcer l'accès direct uniquement
+            access_method: 'direct_only' 
           })
         });
 
         const result = await response.json();
 
         if (result.success) {
-          // Succès avec accès direct
           setSelectedFolder(folderName);
           setFolderPath(folderFullPath);
           setFolderInfo({
@@ -144,7 +143,7 @@ const FolderSelectionApp = ({ onContinue }) => {
             method: 'direct_access'
           });
           setIsSelected(true);
-          setDebugInfo(`✅ Accès direct réussi - ${result.data.article_count || 0} articles trouvés`);
+          setDebugInfo(`✅ Accès réussi!!`);
         } else {
           // Échec - pas de fallback vers upload
           setError(`Accès direct impossible: ${result.message || 'Erreur inconnue'}`);
@@ -179,13 +178,13 @@ const FolderSelectionApp = ({ onContinue }) => {
 
   return (
     <div>
-      <div className="bg-gray-100 rounded-xl shadow-2xl p-8 w-full max-w-md">
+      <div className="w-96 h-100 bg-gray-100 rounded-xl shadow-lg flex flex-col items-center justify-center p-6">
         <div className="text-center mb-8">
           <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
             <Database className="w-8 h-8 text-blue-600" />
           </div>
           <h1 className="text-2xl font-bold text-gray-800 mb-2">
-            Gestion Pharmacie
+            Gestion Pharmaceutique
           </h1>
         </div>
 
