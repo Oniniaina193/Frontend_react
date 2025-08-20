@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import FolderSelectionApp from './components/FolderSelectionApp';
-import ArticleSearchApp from './components/ArticleSearchApp';
-import LoginApp from './components/LoginApp';
+import LoginApp from './components/Auth/LoginApp';
 import authService from './services/authService';
 import './App.css';
-import DashboardPrincipal from './components/dashboard/DashboardPrincipal';
+import InterfacePrincipal from './components/Home/InterfacePrincipal';
 
 function App() {
   // États pour gérer les vues et l'authentification
@@ -47,7 +46,7 @@ function App() {
 
   // Navigation entre les vues
   const handleContinueToSearch = () => {
-    setCurrentView('article-search');
+    setCurrentView('interface-principal');
   };
 
   const handleBackToSelection = () => {
@@ -79,16 +78,16 @@ function App() {
     } finally {
       setIsAuthenticated(false);
       setCurrentUser(null);
-      setCurrentView('article-search'); // Retour à la recherche après déconnexion
+      setCurrentView('interface-principal'); // Retour à la recherche après déconnexion
     }
   };
 
   const handleBackToApp = () => {
-    setCurrentView('article-search');
+    setCurrentView('interface-principal');
   };
 
   const handleBackFromLogin = () => {
-    setCurrentView('article-search');
+    setCurrentView('interface-principal');
   };
 
   // Affichage de chargement
@@ -111,8 +110,8 @@ function App() {
       )}
       
       {/* Vue recherche d'articles avec bouton login fonctionnel */}
-      {currentView === 'article-search' && (
-        <ArticleSearchApp 
+      {currentView === 'interface-principal' && (
+        <InterfacePrincipal
           onBack={handleBackToSelection}
           onLogin={handleLoginRequest}
         />

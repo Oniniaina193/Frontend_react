@@ -10,7 +10,7 @@ const Statistiques = () => {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-3xl font-bold text-gray-900">Tableau de bord</h2>
+      <h2 className="text-2xl font-bold text-gray-900 font-serif">Tableau de bord</h2>
       
       {/* Cartes de statistiques */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

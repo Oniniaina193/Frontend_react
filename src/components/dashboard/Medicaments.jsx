@@ -258,7 +258,7 @@ const Medicaments = () => {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-3xl font-bold text-gray-900 mb-0">Gestion des Médicaments</h2>
+      <h2 className="text-2xl font-bold text-gray-900 mb-0 font-serif">Gestion des Médicaments</h2>
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">

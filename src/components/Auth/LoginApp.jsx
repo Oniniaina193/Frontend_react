@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { User, Lock, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
-import authService from '../services/authService';
 
 const LoginApp = ({ onLoginSuccess, onBack }) => {
   const [email, setEmail] = useState('');
@@ -25,14 +24,19 @@ const LoginApp = ({ onLoginSuccess, onBack }) => {
     setError('');
 
     try {
-      // Appel à l'AuthService
-      const result = await authService.login(email, password);
-
-      if (result.success) {
-        // Connexion réussie - callback vers App.js
-        onLoginSuccess(result.data.user);
-      } else {
-        setError(result.message);
+      // Simulation d'appel API
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Simuler une connexion réussie
+      const mockUser = { 
+        id: 1, 
+        name: 'Administrateur', 
+        email: email,
+        role: 'admin' 
+      };
+      
+      if (onLoginSuccess) {
+        onLoginSuccess(mockUser);
       }
     } catch (error) {
       setError('Erreur de connexion inattendue');
@@ -53,27 +57,11 @@ const LoginApp = ({ onLoginSuccess, onBack }) => {
   };
 
   return (
-    <div className='bg-blue-100'>
+    // Container principal qui occupe toute la hauteur et centre le contenu
+    <div className="min-h-screen w-full bg-white flex items-center justify-center p-4 ">
       <div className="w-full max-w-md">
-        {/* Logo et titre principal 
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <img 
-              src="/images/logoPharmacie.png" 
-              alt="Logo Pharmacie" 
-              className="w-18 h-18 object-contain"
-              onError={(e) => {
-                e.target.style.display = 'none';
-                e.target.parentElement.innerHTML = '<div class="text-green-600 text-2xl font-bold">Rx</div>';
-              }}
-            />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">GESTION PHARMACEUTIQUE</h1>
-          <p className="text-gray-600">Connectez-vous pour accéder à votre espace</p>
-        </div>*/}
-
         {/* Formulaire de login */}
-        <div className="bg-white rounded-xl shadow-lg p-8">
+        <div className="bg-gray-100 rounded-xl shadow-lg p-8">
           <div className="space-y-6">
             {/* Message d'erreur */}
             {error && (
@@ -173,15 +161,6 @@ const LoginApp = ({ onLoginSuccess, onBack }) => {
             </button>
           </div>
 
-          {/* Informations de test 
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-            <h4 className="text-sm font-medium text-blue-800 mb-2">Compte de test :</h4>
-            <p className="text-sm text-blue-700">
-              <strong>Email :</strong> admin@pharmacy.mg<br />
-              <strong>Mot de passe :</strong> admin123
-            </p>
-          </div>*/}
-
           {/* Bouton retour */}
           {onBack && (
             <div className="mt-6 text-center">
@@ -194,11 +173,6 @@ const LoginApp = ({ onLoginSuccess, onBack }) => {
             </div>
           )}
         </div>
-
-        {/* Footer
-        <div className="text-center mt-8 text-sm text-gray-500">
-          <p>© 2025 Gestion Pharmaceutique. Tous droits réservés.</p>
-        </div> */}
       </div>
     </div>
   );

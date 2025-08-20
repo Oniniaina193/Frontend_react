@@ -59,7 +59,7 @@ const Historique = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-3xl font-bold text-gray-900">Historique des Actions</h2>
+        <h2 className="text-2xl font-bold text-gray-900 font-serif">Historique des Actions</h2>
         <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">
           Exporter
         </button>
