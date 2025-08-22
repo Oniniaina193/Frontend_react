@@ -1,96 +1,55 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Package, Loader, AlertCircle } from 'lucide-react';
+import { useData } from '../../contexts/DataContext';
 
 const Accueil = () => {
-  const [articles, setArticles] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [connectionStatus, setConnectionStatus] = useState('unknown');
   const [hasSearched, setHasSearched] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchError, setSearchError] = useState('');
 
-  // Test de connexion au démarrage
-  useEffect(() => {
-    testConnection();
-  }, []);
+  // Utiliser le cache global au lieu d'états locaux
+  const {
+    connectionStatus,
+    loading,
+    errors,
+    searchArticles,
+    testConnection
+  } = useData();
 
-  // Recherche avec debounce pour performance
+  // Recherche avec debounce pour performance - UTILISE LE CACHE
   useEffect(() => {
     const timer = setTimeout(() => {
       if (searchTerm.trim() && connectionStatus === 'ok') {
-        searchArticles();
+        performSearch();
         setHasSearched(true);
       } else if (!searchTerm.trim()) {
-        setArticles([]);
+        setSearchResults([]);
         setHasSearched(false);
+        setSearchError('');
       }
     }, 300); // Délai optimisé pour la rapidité
 
     return () => clearTimeout(timer);
   }, [searchTerm, connectionStatus]);
 
-  // Test de connexion
-  const testConnection = async () => {
-    setConnectionStatus('testing');
-    
-    try {
-      const response = await fetch('/api/direct-access/test-connection', {
-        headers: { 
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const result = await response.json();
-      
-      if (result.success) {
-        setConnectionStatus('ok');
-        setError('');
-      } else {
-        setConnectionStatus('error');
-        setError(result.message);
-      }
-    } catch (error) {
-      setConnectionStatus('error');
-      setError('Impossible de se connecter au serveur');
-    }
-  };
-
-  // Recherche optimisée des articles
-  const searchArticles = useCallback(async () => {
+  // Fonction de recherche qui utilise le cache
+  const performSearch = useCallback(async () => {
     if (!searchTerm.trim() || connectionStatus !== 'ok') {
       return;
     }
 
-    setLoading(true);
-    setError('');
+    setSearchError('');
 
     try {
-      const params = new URLSearchParams({
-        search: searchTerm.trim(),
-        limit: '50' // Limite pour la performance
-      });
-
-      const response = await fetch(`/api/direct-access/search?${params}`, {
-        headers: { 'Accept': 'application/json' }
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        setArticles(result.data.articles);
-        setError('');
-      } else {
-        setError(result.message || 'Erreur lors de la recherche');
-        setArticles([]);
-      }
+      // Cette fonction utilise automatiquement le cache si disponible
+      const result = await searchArticles(searchTerm, '', 1, 50);
+      setSearchResults(result.articles);
     } catch (error) {
-      setError('Erreur de communication avec le serveur');
-      setArticles([]);
-    } finally {
-      setLoading(false);
+      setSearchError(error.message || 'Erreur lors de la recherche');
+      setSearchResults([]);
     }
-  }, [searchTerm, connectionStatus]);
+  }, [searchTerm, connectionStatus, searchArticles]);
 
   // Formatage du prix
   const formatPrice = (price) => {
@@ -137,15 +96,20 @@ const Accueil = () => {
               disabled={connectionStatus !== 'ok'}
               className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors text-lg"
             />
+            {loading.initial && (
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <Loader className="w-5 h-5 animate-spin text-blue-600" />
+              </div>
+            )}
           </div>
 
-          {/* Indicateur de statut 
+          {/* Indicateur de statut de connexion */}
           <div className="mt-4 text-center">
             {connectionStatus === 'testing' && (
               <p className="text-blue-600">Test de connexion...</p>
             )}
-            {connectionStatus === 'ok' && (
-              <p className="text-green-600">✓ Connexion établie</p>
+            {connectionStatus === 'ok' && !loading.initial && (
+              <p className="text-green-600">✓ Prêt pour la recherche</p>
             )}
             {connectionStatus === 'error' && (
               <div className="text-red-600">
@@ -158,19 +122,37 @@ const Accueil = () => {
                 </button>
               </div>
             )}
-          </div>*/}
+            {loading.initial && (
+              <p className="text-blue-600">Chargement initial des données...</p>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Message d'erreur */}
-      {error && (
+      {/* Message d'erreur de recherche */}
+      {searchError && (
         <div className="px-6 py-4 max-w-4xl mx-auto">
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
             <div className="flex items-start space-x-3">
               <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
               <div>
-                <h3 className="text-sm font-medium text-red-800">Erreur</h3>
-                <p className="text-sm text-red-700 mt-1">{error}</p>
+                <h3 className="text-sm font-medium text-red-800">Erreur de recherche</h3>
+                <p className="text-sm text-red-700 mt-1">{searchError}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Message d'erreur de connexion */}
+      {errors.connection && (
+        <div className="px-6 py-4 max-w-4xl mx-auto">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-start space-x-3">
+              <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-medium text-red-800">Problème de connexion</h3>
+                <p className="text-sm text-red-700 mt-1">{errors.connection}</p>
               </div>
             </div>
           </div>
@@ -180,14 +162,14 @@ const Accueil = () => {
       {/* Résultats de recherche */}
       <div className="px-6 py-6">
         <div className="max-w-6xl mx-auto">
-          {loading && (
+          {loading.articles && (
             <div className="flex items-center justify-center py-12">
               <Loader className="w-6 h-6 animate-spin text-blue-600 mr-3" />
               <span className="text-gray-600">Recherche en cours...</span>
             </div>
           )}
 
-          {!loading && hasSearched && articles.length === 0 && searchTerm && (
+          {!loading.articles && hasSearched && searchResults.length === 0 && searchTerm && !searchError && (
             <div className="text-center py-12">
               <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-500 text-xl mb-2">Aucun article trouvé</p>
@@ -197,7 +179,7 @@ const Accueil = () => {
             </div>
           )}
 
-          {!hasSearched && !searchTerm && (
+          {!hasSearched && !searchTerm && !loading.initial && (
             <div className="text-center py-12">
               <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-500 text-xl mb-2">Commencez votre recherche</p>
@@ -207,17 +189,17 @@ const Accueil = () => {
             </div>
           )}
 
-          {articles.length > 0 && (
+          {searchResults.length > 0 && (
             <>
               <div className="mb-4">
                 <h3 className="text-lg font-semibold text-gray-800">
-                  {articles.length} résultat{articles.length > 1 ? 's' : ''} trouvé{articles.length > 1 ? 's' : ''}
+                  {searchResults.length} résultat{searchResults.length > 1 ? 's' : ''} trouvé{searchResults.length > 1 ? 's' : ''}
                 </h3>
               </div>
 
               {/* Grille des résultats */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {articles.map((article, index) => {
+                {searchResults.map((article, index) => {
                   const availability = getAvailability(article.stock);
                   
                   return (

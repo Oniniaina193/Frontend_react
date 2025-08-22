@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import FolderSelectionApp from './components/FolderSelectionApp';
 import LoginApp from './components/Auth/LoginApp';
 import authService from './services/authService';
+import { DataProvider } from './contexts/DataContext';
 import './App.css';
 import InterfacePrincipal from './components/Home/InterfacePrincipal';
 
@@ -90,7 +91,7 @@ function App() {
     setCurrentView('interface-principal');
   };
 
-  // Affichage de chargement
+  // Affichage de chargement de l'app
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
@@ -104,20 +105,22 @@ function App() {
 
   return (
     <div className="App">
-      {/* Vue sélection de dossier */}
+      {/* Vue sélection de dossier - Pas de DataProvider nécessaire */}
       {currentView === 'folder-selection' && (
         <FolderSelectionApp onContinue={handleContinueToSearch} />
       )}
       
-      {/* Vue recherche d'articles avec bouton login fonctionnel */}
+      {/* Vue recherche d'articles - AVEC DataProvider */}
       {currentView === 'interface-principal' && (
-        <InterfacePrincipal
-          onBack={handleBackToSelection}
-          onLogin={handleLoginRequest}
-        />
+        <DataProvider>
+          <InterfacePrincipal
+            onBack={handleBackToSelection}
+            onLogin={handleLoginRequest}
+          />
+        </DataProvider>
       )}
       
-      {/* Vue login */}
+      {/* Vue login - Pas de DataProvider nécessaire */}
       {currentView === 'login' && (
         <LoginApp 
           onLoginSuccess={handleLoginSuccess}
@@ -125,14 +128,16 @@ function App() {
         />
       )}
       
-      {/* Vue dashboard après connexion */}
+      {/* Vue dashboard après connexion - AVEC DataProvider 
       {currentView === 'dashboard' && (
-        <DashboardPrincipal 
-          user={currentUser}
-          onLogout={handleLogout}
-          onBackToApp={handleBackToApp}
-        />
-      )}
+        <DataProvider>
+          <DashboardPrincipal 
+            user={currentUser}
+            onLogout={handleLogout}
+            onBackToApp={handleBackToApp}
+          />
+        </DataProvider>
+      )}*/}
     </div>
   );
 }

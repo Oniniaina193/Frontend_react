@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { User, ArrowLeft } from 'lucide-react';
 import Accueil from './Accueil';
 import Consultation from './Consultation';
@@ -7,30 +7,58 @@ import DashboardAdmin from './DashboardAdmin';
 const InterfacePrincipal = ({ onBack, onLogin }) => {
   const [currentView, setCurrentView] = useState('accueil');
 
-  // Navigation entre les vues
+  // Références pour maintenir les composants en vie
+  const accueilRef = useRef(null);
+  const consultationRef = useRef(null);
+  const adminRef = useRef(null);
+
+  // Navigation entre les vues SANS démontage des composants
   const handleNavigation = (view) => {
     setCurrentView(view);
   };
 
-  // Rendu du contenu selon la vue active
+  // Rendu conditionnel avec maintien en mémoire
   const renderContent = () => {
-    switch (currentView) {
-      case 'accueil':
-        return <Accueil />;
-      case 'consultation':
-        return <Consultation onBack={onBack} />;
-      case 'admin':
-        return <DashboardAdmin />;
-      default:
-        return <Accueil />;
-    }
+    return (
+      <div className="relative w-full h-full bg-white">
+        {/* Accueil - toujours monté, visible/invisible */}
+        <div 
+          ref={accueilRef}
+          className={`absolute inset-0 w-full h-full bg-white transition-opacity duration-200 ${
+            currentView === 'accueil' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+          }`}
+        >
+          <Accueil />
+        </div>
+
+        {/* Consultation - toujours monté, visible/invisible */}
+        <div 
+          ref={consultationRef}
+          className={`absolute inset-0 w-full h-full bg-white transition-opacity duration-200 ${
+            currentView === 'consultation' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+          }`}
+        >
+          <Consultation onBack={onBack} />
+        </div>
+
+        {/* Administration - toujours monté, visible/invisible */}
+        <div 
+          ref={adminRef}
+          className={`absolute inset-0 w-full h-full bg-white transition-opacity duration-200 ${
+            currentView === 'admin' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+          }`}
+        >
+          <DashboardAdmin />
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div className="fixed inset-0 min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 overflow-auto">
-      <div className="w-full max-w-none h-full">
+    <div className="fixed inset-0 w-full h-full bg-white overflow-hidden">
+      <div className="w-full h-full flex flex-col bg-gray-100">
         {/* Header avec logos, titre et navigation */}
-        <div className="bg-gray shadow-lg">
+        <div className="bg-gray shadow-lg relative z-20 flex-shrink-0">
           <div className="px-1 py-1">
             <div className="flex items-center justify-between">
               {/* Section gauche avec logo et titre */}
@@ -48,7 +76,7 @@ const InterfacePrincipal = ({ onBack, onLogin }) => {
               </div>
               
               {/* Navigation avec bouton retour */}
-              <nav className="flex items-center space-x-6 mr-6">
+              <nav className="flex items-center space-x-8 mr-6">
                 {/* Bouton retour avant les liens */}
                 <button
                   onClick={onBack}
@@ -58,7 +86,8 @@ const InterfacePrincipal = ({ onBack, onLogin }) => {
                   <ArrowLeft className="w-5 h-5" />
                 </button>
                 
-                <span
+                {/* Liens de navigation simples */}
+                <a
                   onClick={() => handleNavigation('accueil')}
                   className={`font-serif text-base font-medium cursor-pointer transition-colors duration-200 ${
                     currentView === 'accueil'
@@ -67,9 +96,9 @@ const InterfacePrincipal = ({ onBack, onLogin }) => {
                   }`}
                 >
                   Accueil
-                </span>
+                </a>
                 
-                <span
+                <a
                   onClick={() => handleNavigation('consultation')}
                   className={`font-serif text-base font-medium cursor-pointer transition-colors duration-200 ${
                     currentView === 'consultation'
@@ -78,9 +107,9 @@ const InterfacePrincipal = ({ onBack, onLogin }) => {
                   }`}
                 >
                   Consultation
-                </span>
+                </a>
                 
-                <span
+                <a
                   onClick={() => handleNavigation('admin')}
                   className={`font-serif text-base font-medium cursor-pointer transition-colors duration-200 ${
                     currentView === 'admin'
@@ -89,14 +118,14 @@ const InterfacePrincipal = ({ onBack, onLogin }) => {
                   }`}
                 >
                   Administration
-                </span>
+                </a>
               </nav>
             </div>
           </div>
         </div>
 
-        {/* Contenu principal */}
-        <div className="flex-1">
+        {/* Contenu principal avec navigation sans rechargement */}
+        <div className="flex-1 relative bg-white overflow-hidden">
           {renderContent()}
         </div>
       </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   BarChart3, 
   Package, 
@@ -16,57 +16,88 @@ import Historique from '../dashboard/Historique';
 const DashboardAdmin = () => {
   const [activeTab, setActiveTab] = useState('statistiques');
 
+  // Références pour maintenir les composants en vie
+  const statistiquesRef = useRef(null);
+  const medicamentsRef = useRef(null);
+  const medecinsRef = useRef(null);
+  const ordonnancesRef = useRef(null);
+  const historiqueRef = useRef(null);
+
   // Configuration des menus
   const menuItems = [
     {
       key: 'statistiques',
       label: 'Statistiques',
       icon: BarChart3,
-      component: Statistiques
+      component: Statistiques,
+      ref: statistiquesRef
     },
     {
       key: 'medicaments',
       label: 'Médicaments',
       icon: Package,
-      component: Medicaments
+      component: Medicaments,
+      ref: medicamentsRef
     },
     {
       key: 'medecins',
       label: 'Médecins',
       icon: Users,
-      component: Medecins
+      component: Medecins,
+      ref: medecinsRef
     },
     {
       key: 'ordonnances',
       label: 'Ordonnances',
       icon: FileText,
-      component: Ordonnances
+      component: Ordonnances,
+      ref: ordonnancesRef
     },
     {
       key: 'historique',
       label: 'Historique',
       icon: History,
-      component: Historique
+      component: Historique,
+      ref: historiqueRef
     }
   ];
 
-  // Rendu du contenu selon l'onglet actif
+  // Navigation sans démontage des composants
+  const handleTabChange = (tabKey) => {
+    setActiveTab(tabKey);
+  };
+
+  // Rendu du contenu avec maintien en mémoire
   const renderContent = () => {
-    const activeMenuItem = menuItems.find(item => item.key === activeTab);
-    if (activeMenuItem) {
-      const Component = activeMenuItem.component;
-      return <Component />;
-    }
-    return <Statistiques />;
+    return (
+      <div className="relative w-full h-full">
+        {menuItems.map((item) => {
+          const Component = item.component;
+          const isActive = activeTab === item.key;
+          
+          return (
+            <div
+              key={item.key}
+              ref={item.ref}
+              className={`absolute inset-0 w-full h-full transition-opacity duration-200 ${
+                isActive ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+              }`}
+            >
+              <Component />
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   return (
-    <div className="flex h-full min-h-screen bg-gray-50">
+    <div className="flex h-full w-full bg-gray-50 overflow-hidden">
       {/* Sidebar - Menu à gauche */}
-      <div className="w-56 bg-white shadow-lg border-r border-gray-200 flex-shrink-0">
+      <div className="w-56 bg-white shadow-lg border-r border-gray-200 flex-shrink-0 relative z-20">
         <div className="h-full flex flex-col">
           {/* Header du sidebar */}
-          <div className="p-6 border-b border-gray-200">
+          <div className="p-6 border-b border-gray-200 flex-shrink-0">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                 <BarChart3 className="w-6 h-6 text-blue-600" />
@@ -79,7 +110,7 @@ const DashboardAdmin = () => {
           </div>
 
           {/* Menu items */}
-          <nav className="flex-1 p-4">
+          <nav className="flex-1 p-4 overflow-y-auto">
             <ul className="space-y-2">
               {menuItems.map((item) => {
                 const Icon = item.icon;
@@ -88,7 +119,7 @@ const DashboardAdmin = () => {
                 return (
                   <li key={item.key}>
                     <button
-                      onClick={() => setActiveTab(item.key)}
+                      onClick={() => handleTabChange(item.key)}
                       className={`w-full flex items-center justify-between px-4 py-3 text-left rounded-lg transition-all duration-200 group ${
                         isActive
                           ? 'bg-blue-50 text-blue-700 border border-blue-200'
@@ -116,11 +147,10 @@ const DashboardAdmin = () => {
       </div>
 
       {/* Contenu principal à droite */}
-      <div className="flex-1 flex flex-col min-h-screen">
-
-        {/* Zone de contenu */}
-        <div className="flex-1 p-4 overflow-auto">
-          <div className="max-w-7xl mx-auto">
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        {/* Zone de contenu avec navigation sans rechargement */}
+        <div className="flex-1 p-4 overflow-auto relative bg-gray-50">
+          <div className="max-w-7xl mx-auto h-full">
             {renderContent()}
           </div>
         </div>

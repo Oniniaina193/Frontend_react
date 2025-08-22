@@ -1,16 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Search, Loader, AlertCircle, CheckCircle, X, Edit2, Save, XCircle } from 'lucide-react';
-import medicamentService from '../../services/medicamentService';
+import { useData } from '../../contexts/DataContext';
 
 const Medicaments = () => {
-  // États principaux
-  const [medicaments, setMedicaments] = useState([]);
-  const [families, setFamilies] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-
   // États du formulaire
   const [nouveauMedicament, setNouveauMedicament] = useState({
     nom: '',
@@ -24,72 +16,46 @@ const Medicaments = () => {
     famille: ''
   });
 
-  // États de recherche et filtres
+  // États de recherche et filtres locaux
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFamily, setSelectedFamily] = useState('');
-  const [pagination, setPagination] = useState({
-    current_page: 1,
-    last_page: 1,
-    total: 0,
-    per_page: 20
-  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
-  // Charger les données initiales
-  useEffect(() => {
-    loadFamilies();
-    loadMedicaments();
-  }, []);
+  // Messages
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  // Recherche avec délai
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      loadMedicaments(1);
-    }, 300);
+  // Utiliser le cache global - plus de chargement nécessaire !
+  const {
+    medicaments,
+    families,
+    loading,
+    addMedicament,
+    updateMedicament,
+    deleteMedicament
+  } = useData();
 
-    return () => clearTimeout(timer);
-  }, [searchTerm, selectedFamily]);
+  // Filtrage et pagination côté client (ultra-rapide)
+  const filteredMedicaments = useMemo(() => {
+    return medicaments.filter(med => {
+      const matchSearch = !searchTerm.trim() || 
+        med.nom.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchFamily = !selectedFamily || 
+        med.famille === selectedFamily;
+      return matchSearch && matchFamily;
+    });
+  }, [medicaments, searchTerm, selectedFamily]);
 
-  // Charger les familles
-  const loadFamilies = async () => {
-    try {
-      const response = await medicamentService.getFamilies();
-      if (response.success) {
-        setFamilies(response.data);
-      } else {
-        console.error('Erreur chargement familles:', response.message);
-      }
-    } catch (error) {
-      console.error('Erreur chargement familles:', error);
-    }
-  };
+  // Pagination côté client
+  const paginatedMedicaments = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredMedicaments.slice(startIndex, endIndex);
+  }, [filteredMedicaments, currentPage, itemsPerPage]);
 
-  // Charger les médicaments
-  const loadMedicaments = useCallback(async (page = 1) => {
-    setLoading(true);
-    setError('');
-
-    try {
-      const params = {
-        page,
-        per_page: 20,
-        ...(searchTerm && { search: searchTerm }),
-        ...(selectedFamily && { famille: selectedFamily })
-      };
-
-      const response = await medicamentService.getMedicaments(params);
-      
-      if (response.success) {
-        setMedicaments(response.data.medicaments);
-        setPagination(response.data.pagination);
-      } else {
-        setError(response.message || 'Erreur lors du chargement');
-      }
-    } catch (error) {
-      setError(error.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [searchTerm, selectedFamily]);
+  const totalPages = Math.ceil(filteredMedicaments.length / itemsPerPage);
 
   // Gérer les changements du formulaire
   const handleInputChange = (field, value) => {
@@ -99,7 +65,7 @@ const Medicaments = () => {
     }));
   };
 
-  // Ajouter un médicament 
+  // Ajouter un médicament - Utilise le cache
   const handleAjouter = async () => {
     if (!nouveauMedicament.nom.trim() || !nouveauMedicament.famille.trim()) {
       setError('Veuillez remplir tous les champs');
@@ -111,37 +77,14 @@ const Medicaments = () => {
     setSuccess('');
 
     try {
-      const response = await medicamentService.createMedicament({
+      await addMedicament({
         nom: nouveauMedicament.nom.trim(),
         famille: nouveauMedicament.famille.trim()
       });
 
-      if (response.success) {
-        //Mise à jour du tableau
-        const newMedicament = {
-          id: response.data.id || Date.now(), 
-          nom: nouveauMedicament.nom.trim(),
-          famille: nouveauMedicament.famille.trim()
-        };
-
-        setMedicaments(prev => [newMedicament, ...prev]);
-        
-        // Mettre à jour la pagination
-        setPagination(prev => ({
-          ...prev,
-          total: prev.total + 1
-        }));
-
-        // Mettre à jour les familles si nouvelle famille
-        if (!families.includes(nouveauMedicament.famille.trim())) {
-          setFamilies(prev => [...prev, nouveauMedicament.famille.trim()]);
-        }
-
-        setNouveauMedicament({ nom: '', famille: '' });
-        setSuccess('Médicament ajouté avec succès !');
-        
-        setTimeout(() => setSuccess(''), 3000);
-      }
+      setNouveauMedicament({ nom: '', famille: '' });
+      setSuccess('Médicament ajouté avec succès !');
+      setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError(error.message);
     } finally {
@@ -172,7 +115,7 @@ const Medicaments = () => {
     }));
   };
 
-  // Sauvegarder la modification
+  // Sauvegarder la modification - Utilise le cache
   const handleSaveEdit = async (id) => {
     if (!editingData.nom.trim() || !editingData.famille.trim()) {
       setError('Veuillez remplir tous les champs');
@@ -183,37 +126,21 @@ const Medicaments = () => {
     setSuccess('');
 
     try {
-      const response = await medicamentService.updateMedicament(id, {
+      await updateMedicament(id, {
         nom: editingData.nom.trim(),
         famille: editingData.famille.trim()
       });
 
-      if (response.success) {
-        // Mise à jour du tableau
-        setMedicaments(prev => prev.map(med => 
-          med.id === id 
-            ? { ...med, nom: editingData.nom.trim(), famille: editingData.famille.trim() }
-            : med
-        ));
-
-        // Mettre à jour les familles si nouvelle famille
-        if (!families.includes(editingData.famille.trim())) {
-          setFamilies(prev => [...prev, editingData.famille.trim()]);
-        }
-
-        setSuccess('Médicament modifié avec succès !');
-        setEditingId(null);
-        setEditingData({ nom: '', famille: '' });
-        setTimeout(() => setSuccess(''), 3000);
-      } else {
-        setError(response.message || 'Erreur lors de la modification');
-      }
+      setSuccess('Médicament modifié avec succès !');
+      setEditingId(null);
+      setEditingData({ nom: '', famille: '' });
+      setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError(error.message);
     }
   };
 
-  // Supprimer un médicament 
+  // Supprimer un médicament - Utilise le cache
   const handleSupprimer = async (medicament) => {
     if (!confirm(`Êtes-vous sûr de vouloir supprimer "${medicament.nom}" ?`)) {
       return;
@@ -223,23 +150,9 @@ const Medicaments = () => {
     setSuccess('');
 
     try {
-      const response = await medicamentService.deleteMedicament(medicament.id);
-
-      if (response.success) {
-        // Mise à jour du tableau
-        setMedicaments(prev => prev.filter(med => med.id !== medicament.id));
-        
-        // Mettre à jour la pagination
-        setPagination(prev => ({
-          ...prev,
-          total: prev.total - 1
-        }));
-
-        setSuccess('Médicament supprimé avec succès !');
-        setTimeout(() => setSuccess(''), 3000);
-      } else {
-        setError(response.message || 'Erreur lors de la suppression');
-      }
+      await deleteMedicament(medicament.id);
+      setSuccess('Médicament supprimé avec succès !');
+      setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
       setError(error.message);
     }
@@ -247,13 +160,26 @@ const Medicaments = () => {
 
   // Changer de page
   const handlePageChange = (page) => {
-    loadMedicaments(page);
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
   };
 
   // Masquer les messages
   const hideMessage = (type) => {
     if (type === 'error') setError('');
     if (type === 'success') setSuccess('');
+  };
+
+  // Reset des filtres
+  const handleSearchChange = (value) => {
+    setSearchTerm(value);
+    setCurrentPage(1); // Reset à la page 1
+  };
+
+  const handleFamilyChange = (value) => {
+    setSelectedFamily(value);
+    setCurrentPage(1); // Reset à la page 1
   };
 
   return (
@@ -334,12 +260,39 @@ const Medicaments = () => {
         </button>
       </div>
 
+      {/* Filtres de recherche instantanés 
+      <div className="flex gap-4">
+        <div className="flex-1">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Rechercher par nom..."
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+        <div className="w-64">
+          <select
+            value={selectedFamily}
+            onChange={(e) => handleFamilyChange(e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">Toutes les familles</option>
+            {families.map((famille, index) => (
+              <option key={index} value={famille}>
+                {famille}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>*/}
+
       {/* Tableau des médicaments */}
       <div className="bg-white shadow rounded-lg border border-black overflow-hidden">
-        {loading ? (
+        {loading.initial ? (
           <div className="flex items-center justify-center py-8">
             <Loader className="w-6 h-6 animate-spin text-blue-600 mr-2" />
-            <span className="text-gray-600">Chargement...</span>
+            <span className="text-gray-600">Chargement initial...</span>
           </div>
         ) : (
           <>
@@ -358,7 +311,7 @@ const Medicaments = () => {
                 </tr>
               </thead>
               <tbody className="bg-white">
-                {medicaments.map((med) => (
+                {paginatedMedicaments.map((med) => (
                   <tr key={med.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-2 py-1 text-sm border border-black text-center">
                       {editingId === med.id ? (
@@ -436,7 +389,7 @@ const Medicaments = () => {
               ))}
             </datalist>
             
-            {medicaments.length === 0 && !loading && (
+            {filteredMedicaments.length === 0 && (
               <div className="text-center py-8 border-t border-black">
                 <p className="text-gray-500">
                   {searchTerm || selectedFamily ? 'Aucun médicament trouvé avec ces critères' : 'Aucun médicament enregistré'}
@@ -446,27 +399,27 @@ const Medicaments = () => {
           </>
         )}
 
-        {/* Pagination */}
-        {pagination.last_page > 1 && (
+        {/* Pagination côté client - Ultra rapide */}
+        {totalPages > 1 && (
           <div className="bg-gray-50 px-6 py-3 border-t-2 border-black">
             <div className="flex items-center justify-between">
               <div className="text-sm text-gray-700">
-                Affichage de {pagination.from || 0} à {pagination.to || 0} sur {pagination.total} résultats
+                Affichage de {((currentPage - 1) * itemsPerPage) + 1} à {Math.min(currentPage * itemsPerPage, filteredMedicaments.length)} sur {filteredMedicaments.length} résultats
               </div>
               <div className="flex space-x-2">
                 <button
-                  onClick={() => handlePageChange(pagination.current_page - 1)}
-                  disabled={pagination.current_page <= 1 || loading}
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage <= 1}
                   className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Précédent
                 </button>
                 <span className="px-3 py-1 text-sm">
-                  Page {pagination.current_page} sur {pagination.last_page}
+                  Page {currentPage} sur {totalPages}
                 </span>
                 <button
-                  onClick={() => handlePageChange(pagination.current_page + 1)}
-                  disabled={pagination.current_page >= pagination.last_page || loading}
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage >= totalPages}
                   className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Suivant
