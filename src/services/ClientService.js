@@ -1,24 +1,21 @@
 const getApiUrl = () => {
   try {
     if (import.meta.env && import.meta.env.VITE_API_URL) {
-      console.log('✅ Variable Vite trouvée:', import.meta.env.VITE_API_URL);
       return import.meta.env.VITE_API_URL;
     } else {
-      console.warn('⚠️ Variable VITE_API_URL non trouvée, utilisation du fallback');
       return 'http://localhost:8000/api';
     }
   } catch (error) {
-    console.error('❌ Erreur lors de la récupération de l\'URL:', error);
+    console.error('Erreur lors de la récupération de l\'URL:', error);
     return 'http://localhost:8000/api';
   }
 };
 
 const API_BASE_URL = getApiUrl();
-console.log('🔧 API_BASE_URL configurée pour MedecinService:', API_BASE_URL);
 
-class MedecinService {
+class ClientService {
   constructor() {
-    this.baseURL = `${API_BASE_URL}/medecins`;
+    this.baseURL = `${API_BASE_URL}/clients`;
     this.tokenKey = 'pharmacy_token';
     this.headers = {
       'Content-Type': 'application/json',
@@ -38,7 +35,7 @@ class MedecinService {
     };
   }
 
-  async getMedecins(params = {}) {
+  async getClients(params = {}) {
     try {
       const queryParams = new URLSearchParams();
       if (params.search) queryParams.append('search', params.search);
@@ -46,101 +43,115 @@ class MedecinService {
       if (params.per_page) queryParams.append('per_page', params.per_page);
 
       const url = `${this.baseURL}${queryParams.toString() ? `?${queryParams}` : ''}`;
-      const response = await fetch(url, { method: 'GET', headers: this.getHeaders() });
+      const response = await fetch(url, { 
+        method: 'GET', 
+        headers: this.getHeaders() 
+      });
+      
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erreur lors de la récupération des médecins');
+      if (!response.ok) throw new Error(data.message || 'Erreur lors de la récupération des clients');
+      
       return data;
     } catch (error) {
-      console.error('Erreur getMedecins:', error);
+      console.error('Erreur getClients:', error);
       throw error;
     }
   }
 
-  async createMedecin(medecinData) {
+  async createClient(clientData) {
     try {
       const response = await fetch(this.baseURL, {
         method: 'POST',
         headers: this.getHeaders(),
-        body: JSON.stringify(medecinData),
+        body: JSON.stringify(clientData),
       });
+      
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erreur lors de la création du médecin');
+      if (!response.ok) throw new Error(data.message || 'Erreur lors de la création du client');
+      
       return data;
     } catch (error) {
-      console.error('Erreur createMedecin:', error);
+      console.error('Erreur createClient:', error);
       throw error;
     }
   }
 
-  async updateMedecin(id, medecinData) {
+  async updateClient(id, clientData) {
     try {
       const response = await fetch(`${this.baseURL}/${id}`, {
         method: 'PUT',
         headers: this.getHeaders(),
-        body: JSON.stringify(medecinData),
+        body: JSON.stringify(clientData),
       });
+      
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erreur lors de la modification du médecin');
+      if (!response.ok) throw new Error(data.message || 'Erreur lors de la modification du client');
+      
       return data;
     } catch (error) {
-      console.error('Erreur updateMedecin:', error);
+      console.error('Erreur updateClient:', error);
       throw error;
     }
   }
 
-  async deleteMedecin(id) {
+  async deleteClient(id) {
     try {
       const response = await fetch(`${this.baseURL}/${id}`, {
         method: 'DELETE',
         headers: this.getHeaders(),
       });
+      
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erreur lors de la suppression du médecin');
+      if (!response.ok) throw new Error(data.message || 'Erreur lors de la suppression du client');
+      
       return data;
     } catch (error) {
-      console.error('Erreur deleteMedecin:', error);
+      console.error('Erreur deleteClient:', error);
+      throw error;
+    }
+  }
+
+  async getClient(id) {
+    try {
+      const response = await fetch(`${this.baseURL}/${id}`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Erreur lors de la récupération du client');
+      
+      return data;
+    } catch (error) {
+      console.error('Erreur getClient:', error);
       throw error;
     }
   }
 
   // Recherche rapide pour autocomplete
-  async searchMedecins(query) {
+  async searchClients(query, limit = 10) {
     try {
       if (!query || query.trim().length < 2) {
         return { success: true, data: [] };
       }
 
-      const response = await fetch(
-        `${this.baseURL}/search?search=${encodeURIComponent(query)}`, 
-        {
-          method: 'GET',
-          headers: this.getHeaders(),
-          credentials: 'include',
-        }
-      );
+      const response = await fetch(`${this.baseURL}/search/q?q=${encodeURIComponent(query)}&limit=${limit}`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+      });
       
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || 'Erreur lors de la recherche de médecins');
-      }
-      
-      // Formatage pour inclure le nom avec ONM entre parenthèses
-      if (data.success && data.data) {
-        data.data = data.data.map(medecin => ({
-          ...medecin,
-          display_name: `${medecin.nom_complet} (${medecin.ONM})`
-        }));
-      }
+      if (!response.ok) throw new Error(data.message || 'Erreur lors de la recherche');
       
       return data;
     } catch (error) {
-      console.error('Erreur searchMedecins:', error);
+      console.error('Erreur searchClients:', error);
       throw error;
     }
   }
 }
 
-const medecinService = new MedecinService();
+const clientService = new ClientService();
 
-export default medecinService;
-export { MedecinService };
+export default clientService;
+export { ClientService };

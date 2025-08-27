@@ -24,7 +24,7 @@ const Consultation = ({ onBack }) => {
     testConnection
   } = useData();
 
-  // Effectuer la recherche avec un délai (debounce) - UTILISE LE CACHE
+  // Effectuer la recherche avec un délai (debounce)
   useEffect(() => {
     const timer = setTimeout(() => {
       if (connectionStatus === 'ok') {
@@ -35,24 +35,50 @@ const Consultation = ({ onBack }) => {
     return () => clearTimeout(timer);
   }, [searchTerm, selectedFamily, connectionStatus]);
 
-  // Fonction de recherche qui utilise le cache
+  // CORRECTION : Fonction de recherche corrigée
   const performSearch = useCallback(async (page = 1) => {
     if (connectionStatus !== 'ok') {
       return;
     }
 
     try {
-      // Cette fonction utilise automatiquement le cache si disponible
+      console.log('🔍 Recherche avec:', { searchTerm, selectedFamily, page });
+      
       const result = await searchArticles(searchTerm, selectedFamily, page, 20);
-      setCurrentResults(result.articles);
-      setPagination(result.pagination || {
-        current_page: page,
-        total_pages: Math.ceil((result.articles?.length || 0) / 20),
-        total_items: result.articles?.length || 0,
-        items_per_page: 20
-      });
+      
+      console.log('📊 Résultat recherche:', result);
+      
+      // Vérifier que nous avons bien les données
+      if (result && result.articles) {
+        setCurrentResults(result.articles);
+        
+        // CORRECTION PRINCIPALE : Utiliser la pagination du serveur si elle existe
+        if (result.pagination) {
+          console.log('✅ Utilisation pagination serveur:', result.pagination);
+          setPagination(result.pagination);
+        } else {
+          // Fallback uniquement si pas de pagination serveur
+          console.log('⚠️ Pas de pagination serveur, utilisation fallback');
+          setPagination({
+            current_page: page,
+            total_pages: 1,
+            total_items: result.articles.length,
+            items_per_page: 20
+          });
+        }
+      } else {
+        console.log('❌ Pas de données articles dans la réponse');
+        setCurrentResults([]);
+        setPagination({
+          current_page: 1,
+          total_pages: 1,
+          total_items: 0,
+          items_per_page: 20
+        });
+      }
+      
     } catch (error) {
-      console.error('Erreur recherche:', error);
+      console.error('❌ Erreur recherche:', error);
       setCurrentResults([]);
       setPagination({
         current_page: 1,
@@ -65,6 +91,7 @@ const Consultation = ({ onBack }) => {
 
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= pagination.total_pages && !loading.articles) {
+      console.log('📄 Changement de page vers:', newPage);
       performSearch(newPage);
     }
   };
@@ -105,39 +132,53 @@ const Consultation = ({ onBack }) => {
     }
   };
 
+  // DEBUG : Affichage des informations de pagination
+  console.log('🔧 État pagination actuel:', {
+    total_pages: pagination.total_pages,
+    current_page: pagination.current_page,
+    total_items: pagination.total_items,
+    will_show_pagination: pagination.total_pages > 1
+  });
+
   return (
     <div className="flex flex-col h-full bg-white overflow-hidden">
+      {/* DEBUG : Informations de pagination (à supprimer en production) */}
+      <div className="flex-shrink-0 bg-yellow-50 border-b border-yellow-200 px-6 py-2">
+        <div className="text-xs text-yellow-800">
+          <strong>DEBUG PAGINATION:</strong> Pages={pagination.total_pages} | 
+          Items={pagination.total_items} | 
+          Current={pagination.current_page} | 
+          Show={pagination.total_pages > 1 ? 'OUI' : 'NON'}
+        </div>
+      </div>
+
       {/* En-tête avec filtres - fixe */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200">
         <div className="px-6 py-2">
-          {/* Filtres de recherche */}
           <div className="flex items-center gap-4 mb-0">
-            {/* Recherche par nom */}
             <div className="flex items-center space-x-3 flex-1">
               <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
                 Filtrage par famille des articles :
               </label>
 
-               {/* Filtre par famille - taille réduite */}
-            <div className="relative w-80">
-              <Filter className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 w-3 h-3" />
-              <select
-                value={selectedFamily}
-                onChange={(e) => setSelectedFamily(e.target.value)}
-                disabled={connectionStatus !== 'ok' || loading.families}
-                className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors text-sm"
-              >
-                <option value="">Toutes les familles</option>
-                {families.map((family, index) => (
-                  <option key={index} value={family}>
-                    {family}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="relative w-80">
+                <Filter className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 w-3 h-3" />
+                <select
+                  value={selectedFamily}
+                  onChange={(e) => setSelectedFamily(e.target.value)}
+                  disabled={connectionStatus !== 'ok' || loading.families}
+                  className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors text-sm"
+                >
+                  <option value="">Toutes les familles</option>
+                  {families.map((family, index) => (
+                    <option key={index} value={family}>
+                      {family}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
-            {/* Statistiques */}
             <div className={`rounded-lg px-4 py-2 transition-colors min-w-48 ${
               connectionStatus === 'ok' ? 'bg-blue-50' : 
               connectionStatus === 'error' ? 'bg-red-50' : 'bg-gray-50'
@@ -200,7 +241,6 @@ const Consultation = ({ onBack }) => {
 
       {/* Zone de contenu scrollable */}
       <div className="flex-1 overflow-y-auto bg-white">
-        {/* Contenu du tableau */}
         {connectionStatus === 'unknown' || loading.initial ? (
           <div className="flex flex-col items-center justify-center py-16">
             <Loader className="w-16 h-16 text-blue-600 mb-4 animate-spin" />
@@ -241,7 +281,6 @@ const Consultation = ({ onBack }) => {
           </div>
         ) : (
           <div className="pb-4">
-            {/* Tableau des résultats */}
             <div className="overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead className="bg-gray-50 sticky top-0 z-10">
@@ -292,10 +331,10 @@ const Consultation = ({ onBack }) => {
                         <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getStockClasses(article.stock_status)}`}>
                           {getStockIcon(article.stock_status)}
                           <span className="ml-1.5 font-semibold">
-                            {article.stock}
+                            {article.stock || 0}
                           </span>
                           <span className="ml-1">
-                            {article.stock > 1 ? 'unités' : 'unité'}
+                            {(article.stock || 0) > 1 ? 'unités' : 'unité'}
                           </span>
                         </div>
                       </td>
@@ -308,7 +347,7 @@ const Consultation = ({ onBack }) => {
         )}
       </div>
 
-      {/* Pagination - fixe en bas */}
+      {/* CORRECTION : Pagination toujours visible si plus d'une page */}
       {pagination.total_pages > 1 && (
         <div className="flex-shrink-0 px-6 py-4 border-t border-gray-200 bg-white">
           <div className="flex items-center justify-between">
