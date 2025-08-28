@@ -142,16 +142,6 @@ const Consultation = ({ onBack }) => {
 
   return (
     <div className="flex flex-col h-full bg-white overflow-hidden">
-      {/* DEBUG : Informations de pagination (à supprimer en production) */}
-      <div className="flex-shrink-0 bg-yellow-50 border-b border-yellow-200 px-6 py-2">
-        <div className="text-xs text-yellow-800">
-          <strong>DEBUG PAGINATION:</strong> Pages={pagination.total_pages} | 
-          Items={pagination.total_items} | 
-          Current={pagination.current_page} | 
-          Show={pagination.total_pages > 1 ? 'OUI' : 'NON'}
-        </div>
-      </div>
-
       {/* En-tête avec filtres - fixe */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200">
         <div className="px-6 py-2">

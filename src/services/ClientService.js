@@ -128,6 +128,25 @@ class ClientService {
     }
   }
 
+  async getAllClients() {
+    try {
+        // Utilise this.baseURL au lieu d'une URL hardcodée
+        const response = await fetch(`${this.baseURL}/all`, {
+            method: 'GET',
+            headers: this.getHeaders(), // Utilise la méthode existante pour les headers
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Erreur getAllClients:', error);
+        throw error;
+    }
+}
   // Recherche rapide pour autocomplete
   async searchClients(query, limit = 10) {
     try {
