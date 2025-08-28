@@ -208,16 +208,16 @@ const Accueil = () => {
                   <table className="min-w-full">
                     <thead className="bg-gray-50 sticky top-0 z-10">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                           Nom du médicament
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                           Famille
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                           Prix
                         </th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
+                        <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                           Disponibilité
                         </th>
                       </tr>
@@ -235,7 +235,7 @@ const Accueil = () => {
                             </td>
                             <td className="px-4 py-3">
                               {article.famille ? (
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                <span className="inline-flex items-center px-2.5 py-0.5 text-xs font-medium text-black-800">
                                   {article.famille}
                                 </span>
                               ) : (
@@ -243,7 +243,7 @@ const Accueil = () => {
                               )}
                             </td>
                             <td className="px-4 py-3">
-                              <div className="text-sm font-semibold text-blue-600">
+                              <div className="text-sm font-semibold text-black-600">
                                 {formatPrice(article.prix_ttc)}
                               </div>
                             </td>

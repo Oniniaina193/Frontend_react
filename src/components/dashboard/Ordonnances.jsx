@@ -67,7 +67,7 @@ const FormulaireOrdonnance = React.memo(({
 
   return (
     <div className="bg-white p-2 space-y-4 max-h-[70vh] overflow-y-auto">
-      {/* En-tête avec flèche de retour et titre */}
+      {/* Header */}
       <div className="flex items-center justify-center relative mb-4">
         <button
           onClick={onCancel}
@@ -143,7 +143,7 @@ const FormulaireOrdonnance = React.memo(({
               onClick={onShowAddMedecin}
               className="text-blue-600 hover:text-blue-800 text-sm"
             >
-              + Ajouter
+              + Ajouter médecin
             </button>
           )}
         </div>
@@ -193,7 +193,7 @@ const FormulaireOrdonnance = React.memo(({
             className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
           />
           
-          {/* Adresse et téléphone sur la même ligne */}
+          {/* Adresse et téléphone */}
           <div className="grid grid-cols-2 gap-3">
             <input
               type="text"
@@ -220,7 +220,7 @@ const FormulaireOrdonnance = React.memo(({
           <div className="col-span-2 relative">
             <input
               type="text"
-              placeholder="Saisir le code ticket (ex: 24T00015)"
+              placeholder="Saisir le numéro ticket "
               value={formData.code_ticket}
               onChange={(e) => handleTicketSearch(e.target.value)}
               className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
@@ -400,7 +400,7 @@ const Ordonnances = () => {
     }
   };
 
-  // Charger tous les médecins (comme les familles dans consultation)
+  // Charger tous les médecins 
   const loadAllMedecins = async () => {
     setLoadingMedecins(true);
     try {
@@ -415,7 +415,7 @@ const Ordonnances = () => {
     }
   };
 
-  // Charger tous les clients (comme les familles dans consultation)
+  // Charger tous les clients 
   const loadAllClients = async () => {
     setLoadingClients(true);
     try {
@@ -662,7 +662,7 @@ const Ordonnances = () => {
 
   return (
     <div className="space-y-6 relative">
-      {/* Header avec titre centré */}
+      {/* Header */}
       <div className="flex justify-between items-center">
         <div></div>
         <h2 className="text-2xl font-bold text-gray-900 font-serif">Gestion des Ordonnances</h2>
@@ -709,7 +709,7 @@ const Ordonnances = () => {
           </div>
         ) : (
           <>
-            {/* Tableau avec espacement réduit */}
+            {/* Tableau  */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -835,7 +835,7 @@ const Ordonnances = () => {
         )}
       </div>
 
-      {/* Modal d'ajout - REMPLACEZ l'ancien FormulaireOrdonnance par : */}
+      {/* Modal d'ajout */}
       {showAddModal && (
         <div className="absolute inset-0 flex items-start justify-center mt-2 z-20">
           <div className="bg-white w-full max-w-4xl p-6 rounded-lg shadow-lg relative mx-4">
@@ -870,7 +870,7 @@ const Ordonnances = () => {
         </div>
       )}
 
-      {/* Modal d'édition - MÊME STRUCTURE */}
+      {/* Modal d'édition */}
       {showEditModal && (
         <div className="absolute inset-0 flex items-start justify-center mt-2 z-20">
           <div className="bg-white w-full max-w-4xl p-6 rounded-lg shadow-lg relative mx-4">
@@ -905,14 +905,14 @@ const Ordonnances = () => {
         </div>
       )}
 
-      {/* Modal de détail d'ordonnance - Format ordonnance médicale */}
+      {/* Modal de détail d'ordonnance */}
       {showDetailModal && selectedOrdonnance && (
         <div className="absolute inset-0 flex items-start justify-start mt-2 ml-10 z-20">
           <div className="bg-white w-full max-w-4xl rounded-lg shadow-lg relative">
             
             {/* Contenu de l'ordonnance */}
             <div className="p-6">
-              {/* En-tête avec flèche de retour et titre */}
+              {/* En-tête */}
               <div className="flex items-center justify-center relative mb-6">
                 <button
                   onClick={() => setShowDetailModal(false)}
@@ -931,20 +931,22 @@ const Ordonnances = () => {
               <div className="max-h-[60vh] overflow-y-auto">
                 {/* Informations médecin (gauche) et N°/Date (droite) */}
                 <div className="grid grid-cols-2 gap-8 mb-6">
-                  {/* Informations médecin - gauche */}
+                 {/* Informations médecin - gauche */}
                   <div>
                     <p className="font-semibold text-gray-900 mb-2">Médecin prescripteur</p>
-                    <div className="text-sm space-y-1">
-                      <div className="flex space-x-4">
-                        <span><strong>Dr. {selectedOrdonnance.medecin?.nom_complet}</strong></span>
-                        <span>ONM: {selectedOrdonnance.medecin?.ONM}</span>
+                    <div className="text-sm flex space-x-4">
+                      <div>
+                        <strong>Dr. {selectedOrdonnance.medecin?.nom_complet}</strong>
                       </div>
-                      <p>Adresse: {selectedOrdonnance.medecin?.adresse || 'Non renseignée'}</p>
-                      <p>Téléphone: {selectedOrdonnance.medecin?.telephone || 'Non renseigné'}</p>
+                      <div className="flex flex-col space-y-1">
+                        <span>ONM: {selectedOrdonnance.medecin?.ONM}</span>
+                        <span>Adresse: {selectedOrdonnance.medecin?.adresse || 'Non renseignée'}</span>
+                        <span>Téléphone: {selectedOrdonnance.medecin?.telephone || 'Non renseigné'}</span>
+                      </div>
                     </div>
                   </div>
 
-                  {/* N° ordonnance et date - droite */}
+                  {/* N° ordonnance et date */}
                   <div>
                     <div className="space-y-2 text-sm">
                       <p><strong>N° ordonnance:</strong> {selectedOrdonnance.numero_ordonnance}</p>
@@ -1007,7 +1009,7 @@ const Ordonnances = () => {
               </div>
             </div>
 
-            {/* Boutons d'action dans un div séparé */}
+            {/* Boutons d'action */}
             <div className="border-t bg-gray-50 px-6 py-4 rounded-b-lg">
               <div className="flex justify-between items-center">
                 <div className="flex space-x-3">

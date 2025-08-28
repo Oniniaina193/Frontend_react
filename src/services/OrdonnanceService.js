@@ -201,6 +201,65 @@ class OrdonnanceService {
     }
   }
 
+   /**
+   * Récupérer la liste des médicaments qui ont des ordonnances
+   * Pour le filtre de sélection dans l'historique
+   */
+  async getMedicamentsAvecOrdonnances() {
+    try {
+      const response = await fetch(`${this.baseURL}/historique/medicaments`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      });
+      
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Erreur lors de la récupération des médicaments');
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('Erreur getMedicamentsAvecOrdonnances:', error);
+      throw error;
+    }
+  }
+/**
+ * Récupérer l'historique des ordonnances par médicament et/ou par date
+ * MODIFICATION: Support de la recherche par date seule
+ */
+async getHistoriqueParMedicament(params = {}) {
+  try {
+    const queryParams = new URLSearchParams();
+    
+    // MODIFICATION: Médicament optionnel maintenant
+    if (params.medicament) queryParams.append('medicament', params.medicament);
+    if (params.date) queryParams.append('date', params.date);
+    if (params.page) queryParams.append('page', params.page);
+    if (params.per_page) queryParams.append('per_page', params.per_page);
+
+    // MODIFICATION: Vérifier qu'au moins un critère est fourni côté client
+    if (!params.medicament && !params.date) {
+      throw new Error('Au moins un critère de recherche est requis (médicament ou date)');
+    }
+
+    const url = `${this.baseURL}/historique${queryParams.toString() ? `?${queryParams}` : ''}`;
+    const response = await fetch(url, { 
+      method: 'GET', 
+      headers: this.getHeaders(),
+      credentials: 'include'
+    });
+    
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Erreur lors de la récupération de l\'historique');
+    
+    return data;
+  } catch (error) {
+    console.error('Erreur getHistoriqueParMedicament:', error);
+    throw error;
+  }
+}
+
   // TICKETS ACCESS - Pour récupérer les médicaments
   async searchTickets(query, limit = 10) {
     try {
