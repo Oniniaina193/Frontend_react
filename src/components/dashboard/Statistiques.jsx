@@ -5,7 +5,7 @@ const Statistiques = () => {
     { title: 'Médicaments en stock', value: '1,247', color: 'bg-blue-500' },
     { title: 'Ordonnances du jour', value: '86', color: 'bg-green-500' },
     { title: 'Médecins partenaires', value: '42', color: 'bg-purple-500' },
-    { title: 'Chiffre d\'affaires', value: '€15,248', color: 'bg-orange-500' }
+    { title: 'Total ordonnances', value: '€15,248', color: 'bg-orange-500' }
   ];
 
   return (

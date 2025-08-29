@@ -371,11 +371,29 @@ const Ordonnances = () => {
   const [editingId, setEditingId] = useState(null);
 
   // Chargement initial
-  useEffect(() => {
+ useEffect(() => {
+  const debugAndLoad = async () => {
+    // Debug du dossier
+    console.log('=== DEBUT DEBUG ===');
+    await ordonnanceService.debugCurrentDossier();
+    
+    // Vérification configuration
+    const verification = await ordonnanceService.verifyDossierConfiguration();
+    console.log('Vérification dossier:', verification);
+    
+    if (!verification.success) {
+      setError(`Problème de configuration dossier: ${verification.message}`);
+      return;
+    }
+    
+    // Chargement normal
     loadOrdonnances();
-    loadAllMedecins();
+    loadAllMedecins(); 
     loadAllClients();
-  }, [currentPage, searchTerm]);
+  };
+  
+  debugAndLoad();
+}, [currentPage, searchTerm]);
 
   // Charger les ordonnances
   const loadOrdonnances = async () => {

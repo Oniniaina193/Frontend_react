@@ -36,19 +36,111 @@ class OrdonnanceService {
     };
   }
 
+  // MÉTHODE DE DEBUG : Vérifier le dossier actuel
+  async debugCurrentDossier() {
+    const sessionDossier = sessionStorage.getItem('current_dossier_vente');
+    const localDossier = localStorage.getItem('current_dossier_vente');
+    const defaultDossier = 'default';
+    
+    console.log('=== DEBUG DOSSIER ===');
+    console.log('sessionStorage dossier:', sessionDossier);
+    console.log('localStorage dossier:', localDossier);
+    console.log('Dossier utilisé:', this.getCurrentDossier());
+    
+    // Vérifier côté serveur
+    try {
+      const response = await fetch('/api/folder-selection/current', {
+        headers: { 'Accept': 'application/json' }
+      });
+      const data = await response.json();
+      console.log('Dossier côté serveur:', data);
+    } catch (error) {
+      console.error('Erreur récupération dossier serveur:', error);
+    }
+    
+    return this.getCurrentDossier();
+  }
+
+
+  // Récupérer le dossier actuel - adaptez selon votre gestion
+ getCurrentDossier() {
+    const sessionDossier = sessionStorage.getItem('current_dossier_vente');
+    const localDossier = localStorage.getItem('current_dossier_vente');
+    
+    if (sessionDossier) {
+      console.log('🗂️ Dossier trouvé (session):', sessionDossier);
+      return sessionDossier;
+    }
+    
+    if (localDossier) {
+      console.log('🗂️ Dossier trouvé (local):', localDossier);
+      // Copier en session pour cohérence
+      sessionStorage.setItem('current_dossier_vente', localDossier);
+      return localDossier;
+    }
+    
+    console.warn('⚠️ Aucun dossier trouvé, utilisation de "default"');
+    return 'default';
+  }
+
+
+  // Ajouter le dossier aux paramètres pour les requêtes qui en ont besoin
+  addDossierToParams(params = {}) {
+    return {
+      ...params,
+      current_dossier_vente: this.getCurrentDossier()
+    };
+  }
+
+  // MÉTHODE SYNCHRONISÉE : Récupérer et synchroniser le dossier actuel
+  async syncCurrentDossier() {
+    try {
+      const response = await fetch('/api/folder-selection/current', {
+        headers: { 'Accept': 'application/json' }
+      });
+      const data = await response.json();
+      
+      if (data.success && data.data && data.data.folder_name) {
+        // Synchroniser le dossier avec le storage local
+        sessionStorage.setItem('current_dossier_vente', data.data.folder_name);
+        localStorage.setItem('current_dossier_vente', data.data.folder_name);
+        console.log('🔄 Dossier synchronisé:', data.data.folder_name);
+        return data.data.folder_name;
+      }
+    } catch (error) {
+      console.error('Erreur sync dossier:', error);
+    }
+    
+    return this.getCurrentDossier();
+  }
+
   // ORDONNANCES - CRUD Operations
   async getOrdonnances(params = {}) {
     try {
+      // Synchroniser d'abord le dossier
+      const currentDossier = await this.syncCurrentDossier();
+      console.log('📁 Chargement ordonnances pour dossier:', currentDossier);
+      
+      const paramsWithDossier = {
+        ...params,
+        current_dossier_vente: currentDossier
+      };
+      
       const queryParams = new URLSearchParams();
-      if (params.search) queryParams.append('search', params.search);
-      if (params.page) queryParams.append('page', params.page);
-      if (params.per_page) queryParams.append('per_page', params.per_page);
-      if (params.medecin_id) queryParams.append('medecin_id', params.medecin_id);
-      if (params.client_id) queryParams.append('client_id', params.client_id);
-      if (params.date_debut) queryParams.append('date_debut', params.date_debut);
-      if (params.date_fin) queryParams.append('date_fin', params.date_fin);
+      if (paramsWithDossier.search) queryParams.append('search', paramsWithDossier.search);
+      if (paramsWithDossier.page) queryParams.append('page', paramsWithDossier.page);
+      if (paramsWithDossier.per_page) queryParams.append('per_page', paramsWithDossier.per_page);
+      if (paramsWithDossier.medecin_id) queryParams.append('medecin_id', paramsWithDossier.medecin_id);
+      if (paramsWithDossier.client_id) queryParams.append('client_id', paramsWithDossier.client_id);
+      if (paramsWithDossier.date_debut) queryParams.append('date_debut', paramsWithDossier.date_debut);
+      if (paramsWithDossier.date_fin) queryParams.append('date_fin', paramsWithDossier.date_fin);
+      
+      // Le dossier est requis
+      queryParams.append('current_dossier_vente', currentDossier);
 
       const url = `${this.baseURL}${queryParams.toString() ? `?${queryParams}` : ''}`;
+      console.log('🌐 URL requête:', url);
+      
       const response = await fetch(url, { 
         method: 'GET', 
         headers: this.getHeaders(),
@@ -56,22 +148,29 @@ class OrdonnanceService {
       });
       
       const data = await response.json();
+      console.log('📊 Réponse ordonnances:', data);
+      
       if (!response.ok) throw new Error(data.message || 'Erreur lors de la récupération des ordonnances');
       
       return data;
     } catch (error) {
-      console.error('Erreur getOrdonnances:', error);
+      console.error('❌ Erreur getOrdonnances:', error);
       throw error;
     }
   }
 
   async createOrdonnance(ordonnanceData) {
     try {
+      const dataWithDossier = {
+        ...ordonnanceData,
+        current_dossier_vente: this.getCurrentDossier()
+      };
+      
       const response = await fetch(this.baseURL, {
         method: 'POST',
         headers: this.getHeaders(),
         credentials: 'include',
-        body: JSON.stringify(ordonnanceData),
+        body: JSON.stringify(dataWithDossier),
       });
       
       const data = await response.json();
@@ -88,11 +187,16 @@ class OrdonnanceService {
 
   async updateOrdonnance(id, ordonnanceData) {
     try {
+      const dataWithDossier = {
+        ...ordonnanceData,
+        current_dossier_vente: this.getCurrentDossier()
+      };
+      
       const response = await fetch(`${this.baseURL}/${id}`, {
         method: 'PUT',
         headers: this.getHeaders(),
         credentials: 'include',
-        body: JSON.stringify(ordonnanceData),
+        body: JSON.stringify(dataWithDossier),
       });
       
       const data = await response.json();
@@ -147,7 +251,38 @@ class OrdonnanceService {
     }
   }
 
-  // MODIFICATION 2 & 5: Nouvelle méthode pour récupérer les médecins avec format "Nom (ONM)"
+  // NOUVELLE MÉTHODE : Vérifier si le dossier est bien configuré
+  async verifyDossierConfiguration() {
+    try {
+      const currentDossier = await this.syncCurrentDossier();
+      
+      // Test de requête simple
+      const response = await fetch(`${this.baseURL}?current_dossier_vente=${encodeURIComponent(currentDossier)}&per_page=1`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+        credentials: 'include'
+      });
+      
+      const data = await response.json();
+      
+      return {
+        success: response.ok,
+        dossier: currentDossier,
+        message: response.ok ? 'Configuration OK' : data.message,
+        data: data
+      };
+    } catch (error) {
+      return {
+        success: false,
+        dossier: this.getCurrentDossier(),
+        message: error.message,
+        data: null
+      };
+    }
+  }
+
+
+  // Médecins pour sélection - PAS besoin de dossier selon votre contrôleur
   async getMedecinsForSelection() {
     try {
       const response = await fetch(`${this.baseURL}/data/medecins-selection`, {
@@ -168,10 +303,13 @@ class OrdonnanceService {
     }
   }
 
-  // MODIFICATION 1: Nouvelle méthode pour suggérer un numéro d'ordonnance (optionnel)
+  // Suggestion de numéro d'ordonnance - BESOIN du dossier
   async suggestNumeroOrdonnance() {
     try {
-      const response = await fetch(`${API_BASE_URL}/ordonnances/suggest-numero`, {
+      const currentDossier = this.getCurrentDossier();
+      const url = `${this.baseURL}/suggest-numero?current_dossier_vente=${encodeURIComponent(currentDossier)}`;
+      
+      const response = await fetch(url, {
         method: 'GET',
         headers: this.getHeaders(),
         credentials: 'include',
@@ -189,11 +327,10 @@ class OrdonnanceService {
     }
   }
 
-  // MODIFICATION 1: Vérifier l'unicité du numéro d'ordonnance
+  // Vérifier l'unicité du numéro d'ordonnance
   async checkNumeroUnique(numero) {
     try {
-      // Cette vérification se fera côté serveur lors de la validation
-      // Mais on peut implémenter une vérification en temps réel si nécessaire
+      // La vérification se fait côté serveur lors de la validation
       return true;
     } catch (error) {
       console.error('Erreur checkNumeroUnique:', error);
@@ -201,13 +338,13 @@ class OrdonnanceService {
     }
   }
 
-   /**
-   * Récupérer la liste des médicaments qui ont des ordonnances
-   * Pour le filtre de sélection dans l'historique
-   */
+  // Médicaments avec ordonnances - BESOIN du dossier
   async getMedicamentsAvecOrdonnances() {
     try {
-      const response = await fetch(`${this.baseURL}/historique/medicaments`, {
+      const currentDossier = this.getCurrentDossier();
+      const url = `${this.baseURL}/historique/medicaments?current_dossier_vente=${encodeURIComponent(currentDossier)}`;
+      
+      const response = await fetch(url, {
         method: 'GET',
         headers: this.getHeaders(),
         credentials: 'include',
@@ -224,41 +361,65 @@ class OrdonnanceService {
       throw error;
     }
   }
-/**
- * Récupérer l'historique des ordonnances par médicament et/ou par date
- * MODIFICATION: Support de la recherche par date seule
- */
-async getHistoriqueParMedicament(params = {}) {
-  try {
-    const queryParams = new URLSearchParams();
-    
-    // MODIFICATION: Médicament optionnel maintenant
-    if (params.medicament) queryParams.append('medicament', params.medicament);
-    if (params.date) queryParams.append('date', params.date);
-    if (params.page) queryParams.append('page', params.page);
-    if (params.per_page) queryParams.append('per_page', params.per_page);
 
-    // MODIFICATION: Vérifier qu'au moins un critère est fourni côté client
-    if (!params.medicament && !params.date) {
-      throw new Error('Au moins un critère de recherche est requis (médicament ou date)');
+  // Historique par médicament - BESOIN du dossier
+  async getHistoriqueParMedicament(params = {}) {
+    try {
+      const paramsWithDossier = this.addDossierToParams(params);
+      
+      const queryParams = new URLSearchParams();
+      
+      if (paramsWithDossier.medicament) queryParams.append('medicament', paramsWithDossier.medicament);
+      if (paramsWithDossier.date) queryParams.append('date', paramsWithDossier.date);
+      if (paramsWithDossier.page) queryParams.append('page', paramsWithDossier.page);
+      if (paramsWithDossier.per_page) queryParams.append('per_page', paramsWithDossier.per_page);
+      // Le dossier est requis par le contrôleur
+      queryParams.append('current_dossier_vente', paramsWithDossier.current_dossier_vente);
+
+      if (!paramsWithDossier.medicament && !paramsWithDossier.date) {
+        throw new Error('Au moins un critère de recherche est requis (médicament ou date)');
+      }
+
+      const url = `${this.baseURL}/historique${queryParams.toString() ? `?${queryParams}` : ''}`;
+      const response = await fetch(url, { 
+        method: 'GET', 
+        headers: this.getHeaders(),
+        credentials: 'include'
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Erreur lors de la récupération de l\'historique');
+      
+      return data;
+    } catch (error) {
+      console.error('Erreur getHistoriqueParMedicament:', error);
+      throw error;
     }
-
-    const url = `${this.baseURL}/historique${queryParams.toString() ? `?${queryParams}` : ''}`;
-    const response = await fetch(url, { 
-      method: 'GET', 
-      headers: this.getHeaders(),
-      credentials: 'include'
-    });
-    
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Erreur lors de la récupération de l\'historique');
-    
-    return data;
-  } catch (error) {
-    console.error('Erreur getHistoriqueParMedicament:', error);
-    throw error;
   }
-}
+
+  // Statistiques du dossier - BESOIN du dossier
+  async getStatistiquesDossier() {
+    try {
+      const currentDossier = this.getCurrentDossier();
+      const url = `${this.baseURL}/statistiques?current_dossier_vente=${encodeURIComponent(currentDossier)}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      });
+      
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Erreur lors de la récupération des statistiques');
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('Erreur getStatistiquesDossier:', error);
+      throw error;
+    }
+  }
 
   // TICKETS ACCESS - Pour récupérer les médicaments
   async searchTickets(query, limit = 10) {
@@ -318,12 +479,11 @@ async getHistoriqueParMedicament(params = {}) {
   // UTILITAIRES
   formatOrdonnanceForSubmit(formData, medicaments, clientExistant = null) {
     const ordonnanceData = {
-      // MODIFICATION 1: Inclure le numéro d'ordonnance saisi manuellement
       numero_ordonnance: formData.numero_ordonnance,
       medecin_id: formData.medecin_id,
       date: formData.date,
       medicaments: medicaments.map(med => ({
-        id: med.id || null, // Pour les modifications
+        id: med.id || null,
         code_medicament: med.code_doc || med.code_medicament || '',
         designation: med.designation,
         quantite: parseInt(med.quantite) || 1,
@@ -345,35 +505,30 @@ async getHistoriqueParMedicament(params = {}) {
     return ordonnanceData;
   }
 
-  // MODIFICATION 4: Formatage spécial pour la modification (exclure le numéro d'ordonnance)
-  formatOrdonnanceForUpdate(formData, medicaments, clientExistant = null) {
-    const ordonnanceData = {
-      // MODIFICATION 4: PAS de numéro d'ordonnance dans la mise à jour
+  // Formatage pour modification (pas de numéro d'ordonnance)
+  formatOrdonnanceForUpdate(formData, medicaments) {
+    return {
       medecin_id: formData.medecin_id,
       date: formData.date,
       medicaments: medicaments.map(med => ({
-        id: med.id || null, // Important pour identifier les médicaments existants
+        id: med.id || null,
         code_medicament: med.code_doc || med.code_medicament || '',
         designation: med.designation,
         quantite: parseInt(med.quantite) || 1,
-        posologie: med.posologie || '', // MODIFICATION 4: Modifiable
-        duree: med.duree || '' // MODIFICATION 4: Modifiable
+        posologie: med.posologie || '',
+        duree: med.duree || ''
       })),
-      // MODIFICATION 4: Informations client modifiables
       client: {
         nom_complet: formData.client_nom_complet,
         adresse: formData.client_adresse,
         telephone: formData.client_telephone || null
       }
     };
-
-    return ordonnanceData;
   }
 
   validateOrdonnanceData(ordonnanceData, isUpdate = false) {
     const errors = [];
 
-    // MODIFICATION 1: Validation du numéro d'ordonnance (sauf en modification)
     if (!isUpdate && !ordonnanceData.numero_ordonnance) {
       errors.push('Numéro d\'ordonnance requis');
     }
