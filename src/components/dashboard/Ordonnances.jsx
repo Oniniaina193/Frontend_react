@@ -19,6 +19,7 @@ import {
 import ordonnanceService from '../../services/ordonnanceService';
 import clientService from '../../services/ClientService';
 import medecinService from '../../services/medecinService';
+import { useData } from '../../contexts/DataContext';
 
 // Composant FormulaireOrdonnance modifié
 const FormulaireOrdonnance = React.memo(({ 
@@ -138,14 +139,12 @@ const FormulaireOrdonnance = React.memo(({
           </select>
         </div>
         <div>
-          {!formData.medecin_id && !loadingMedecins && (
-            <button
-              onClick={onShowAddMedecin}
-              className="text-blue-600 hover:text-blue-800 text-sm"
-            >
-              + Ajouter médecin
-            </button>
-          )}
+          <button
+            onClick={onShowAddMedecin}
+            className="text-blue-600 hover:text-blue-800 text-sm"
+          >
+            + Ajouter médecin
+          </button>
         </div>
       </div>
 
@@ -327,6 +326,91 @@ const FormulaireOrdonnance = React.memo(({
   );
 });
 
+// Nouveau composant FormulaireMedecin pour l'ajout rapide
+const FormulaireMedecin = ({ onSubmit, onCancel, loading = false }) => {
+  const [formData, setFormData] = useState({
+    nom_complet: '',
+    adresse: '',
+    ONM: '',
+    telephone: ''
+  });
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await onSubmit(formData);
+  };
+
+  return (
+    <div className="bg-white w-full max-w-lg p-6 rounded-lg shadow-lg relative">
+      <h3 className="text-lg font-medium text-gray-900 mb-4 text-center">
+        Nouveau médecin
+      </h3>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <input
+          type="text"
+          name="nom_complet"
+          value={formData.nom_complet}
+          onChange={handleChange}
+          placeholder="Nom complet"
+          required
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        />
+        <input
+          type="text"
+          name="adresse"
+          value={formData.adresse}
+          onChange={handleChange}
+          placeholder="Adresse"
+          required
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        />
+        <input
+          type="text"
+          name="ONM"
+          value={formData.ONM}
+          onChange={handleChange}
+          placeholder="Numéro d'ordre"
+          required
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        />
+        <input
+          type="tel"
+          name="telephone"
+          value={formData.telephone}
+          onChange={handleChange}
+          placeholder="Téléphone"
+          className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        />
+        <div className="flex space-x-2 pt-2">
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-md transition-colors"
+          >
+            {loading ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>
+            ) : (
+              'Ajouter'
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="flex-1 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-md transition-colors"
+          >
+            Annuler
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 // Composant principal Ordonnances
 const Ordonnances = () => {
   // États principaux
@@ -358,42 +442,43 @@ const Ordonnances = () => {
   const [clientExistant, setClientExistant] = useState(null);
 
   // Cache des données (style consultation)
-  const [medecins, setMedecins] = useState([]);
   const [clients, setClients] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [loadingTicket, setLoadingTicket] = useState(false);
   const [loadingNumeroSuggestion, setLoadingNumeroSuggestion] = useState(false);
-  const [loadingMedecins, setLoadingMedecins] = useState(false);
   const [loadingClients, setLoadingClients] = useState(false);
+  const [loadingAddMedecin, setLoadingAddMedecin] = useState(false);
 
   // États pour la modification
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
+  // Utiliser le DataContext pour les médecins
+  const { medecins, addMedecin, loading: contextLoading } = useData();
+
   // Chargement initial
- useEffect(() => {
-  const debugAndLoad = async () => {
-    // Debug du dossier
-    console.log('=== DEBUT DEBUG ===');
-    await ordonnanceService.debugCurrentDossier();
+  useEffect(() => {
+    const debugAndLoad = async () => {
+      // Debug du dossier
+      console.log('=== DEBUT DEBUG ===');
+      await ordonnanceService.debugCurrentDossier();
+      
+      // Vérification configuration
+      const verification = await ordonnanceService.verifyDossierConfiguration();
+      console.log('Vérification dossier:', verification);
+      
+      if (!verification.success) {
+        setError(`Problème de configuration dossier: ${verification.message}`);
+        return;
+      }
+      
+      // Chargement normal
+      loadOrdonnances();
+      loadAllClients();
+    };
     
-    // Vérification configuration
-    const verification = await ordonnanceService.verifyDossierConfiguration();
-    console.log('Vérification dossier:', verification);
-    
-    if (!verification.success) {
-      setError(`Problème de configuration dossier: ${verification.message}`);
-      return;
-    }
-    
-    // Chargement normal
-    loadOrdonnances();
-    loadAllMedecins(); 
-    loadAllClients();
-  };
-  
-  debugAndLoad();
-}, [currentPage, searchTerm]);
+    debugAndLoad();
+  }, [currentPage, searchTerm]);
 
   // Charger les ordonnances
   const loadOrdonnances = async () => {
@@ -418,21 +503,6 @@ const Ordonnances = () => {
     }
   };
 
-  // Charger tous les médecins 
-  const loadAllMedecins = async () => {
-    setLoadingMedecins(true);
-    try {
-      const response = await ordonnanceService.getMedecinsForSelection();
-      if (response.success) {
-        setMedecins(response.data);
-      }
-    } catch (err) {
-      console.error('Erreur chargement médecins:', err);
-    } finally {
-      setLoadingMedecins(false);
-    }
-  };
-
   // Charger tous les clients 
   const loadAllClients = async () => {
     setLoadingClients(true);
@@ -445,6 +515,32 @@ const Ordonnances = () => {
       console.error('Erreur chargement clients:', err);
     } finally {
       setLoadingClients(false);
+    }
+  };
+
+  // Handler pour l'ajout de médecin
+  const handleAddMedecin = async (medecinData) => {
+    setLoadingAddMedecin(true);
+    
+    // Fermer le modal immédiatement
+    setShowAddMedecinModal(false);
+    
+    try {
+      const result = await addMedecin(medecinData);
+      
+      if (result.success) {
+        // Sélectionner automatiquement le nouveau médecin
+        const newMedecinId = result.data.id;
+        setFormData(prev => ({ ...prev, medecin_id: newMedecinId }));
+        
+        // Notification de succès immédiate
+        alert('Médecin ajouté avec succès et sélectionné automatiquement !');
+      }
+    } catch (error) {
+      console.error('Erreur ajout médecin:', error);
+      alert('Erreur lors de l\'ajout du médecin: ' + error.message);
+    } finally {
+      setLoadingAddMedecin(false);
     }
   };
 
@@ -712,7 +808,7 @@ const Ordonnances = () => {
       )}
 
       {/* Contenu avec blur */}
-      <div className={`${(showAddModal || showEditModal) ? 'blur-sm opacity-60 pointer-events-none' : ''}`}>
+      <div className={`${(showAddModal || showEditModal || showAddMedecinModal) ? 'blur-sm opacity-60 pointer-events-none' : ''}`}>
         {loading ? (
           <div className="text-center py-12">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -869,7 +965,7 @@ const Ordonnances = () => {
               setTickets={setTickets}
               clientExistant={clientExistant}
               setClientExistant={setClientExistant}
-              loadingMedecins={loadingMedecins}
+              loadingMedecins={contextLoading.medecins}
               loadingClients={loadingClients}
               loadingTicket={loadingTicket}
               loadingNumeroSuggestion={loadingNumeroSuggestion}
@@ -904,7 +1000,7 @@ const Ordonnances = () => {
               setTickets={setTickets}
               clientExistant={clientExistant}
               setClientExistant={setClientExistant}
-              loadingMedecins={loadingMedecins}
+              loadingMedecins={contextLoading.medecins}
               loadingClients={loadingClients}
               loadingTicket={loadingTicket}
               loadingNumeroSuggestion={loadingNumeroSuggestion}
@@ -1070,31 +1166,14 @@ const Ordonnances = () => {
         </div>
       )}
 
-      {/* Modal d'ajout de médecin (placeholder) */}
+      {/* Modal d'ajout de médecin - NOUVEAU FORMULAIRE INTÉGRÉ */}
       {showAddMedecinModal && (
-        <div className="absolute inset-0 flex items-center justify-center z-30">
-          <div className="bg-white w-full max-w-md p-6 rounded-lg shadow-lg relative mx-4">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-semibold text-gray-900">Ajouter un médecin</h3>
-              <button
-                onClick={() => setShowAddMedecinModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            <div className="text-center py-8">
-              <p className="text-gray-500 mb-4">
-                Fonctionnalité à implémenter pour ajouter un nouveau médecin
-              </p>
-              <button
-                onClick={() => setShowAddMedecinModal(false)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-              >
-                Fermer
-              </button>
-            </div>
-          </div>
+        <div className="absolute inset-0 flex items-start justify-center mt-10 z-30">
+          <FormulaireMedecin
+            onSubmit={handleAddMedecin}
+            onCancel={() => setShowAddMedecinModal(false)}
+            loading={loadingAddMedecin}
+          />
         </div>
       )}
     </div>
