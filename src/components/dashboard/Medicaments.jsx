@@ -260,7 +260,7 @@ const Medicaments = () => {
         </button>
       </div>
 
-      {/* Filtres de recherche instantanés 
+      {/* Filtres de recherche */}
       <div className="flex gap-4">
         <div className="flex-1">
           <input
@@ -271,21 +271,7 @@ const Medicaments = () => {
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
-        <div className="w-64">
-          <select
-            value={selectedFamily}
-            onChange={(e) => handleFamilyChange(e.target.value)}
-            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Toutes les familles</option>
-            {families.map((famille, index) => (
-              <option key={index} value={famille}>
-                {famille}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>*/}
+      </div>
 
       {/* Tableau des médicaments */}
       <div className="bg-white shadow rounded-lg border border-black overflow-hidden">

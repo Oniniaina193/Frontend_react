@@ -392,20 +392,6 @@ const Historique = () => {
         <div></div>
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 font-serif">Historique des Ordonnances</h2>
-          {/* Affichage du dossier actuel */}
-          {currentDossier && (
-            <div className="flex items-center justify-center mt-2 text-sm text-gray-600">
-              <FolderOpen className="w-4 h-4 mr-2" />
-              <span>Dossier actuel: <strong>{currentDossier}</strong></span>
-              <button
-                onClick={refreshDossierData}
-                className="ml-2 text-blue-600 hover:text-blue-800 underline"
-                title="Actualiser les données du dossier"
-              >
-                ↻
-              </button>
-            </div>
-          )}
         </div>
         <div></div>
       </div>
@@ -415,10 +401,6 @@ const Historique = () => {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
           {/* Sélection médicament */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Search className="inline w-4 h-4 mr-2" />
-              Rechercher par médicament
-            </label>
             <select
               value={medicamentSelectionne}
               onChange={(e) => {
@@ -432,7 +414,7 @@ const Historique = () => {
                 {loadingMedicaments 
                   ? 'Chargement...' 
                   : medicamentsDisponibles.length > 0 
-                    ? 'Sélectionner un médicament... (optionnel)' 
+                    ? 'Recherche des médicaments.....' 
                     : 'Aucun médicament dans ce dossier'
                 }
               </option>
@@ -446,10 +428,6 @@ const Historique = () => {
 
           {/* Filtre par date */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Calendar className="inline w-4 h-4 mr-2" />
-              Filtrer par date
-            </label>
             <input
               type="date"
               value={dateFiltre}
