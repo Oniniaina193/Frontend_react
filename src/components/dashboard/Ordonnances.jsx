@@ -13,13 +13,22 @@ import {
   Save,
   UserPlus,
   RefreshCw,
-  Filter
+  Filter,
+  Download
 } from 'lucide-react';
 
 import ordonnanceService from '../../services/ordonnanceService';
 import clientService from '../../services/ClientService';
 import medecinService from '../../services/medecinService';
 import { useData } from '../../contexts/DataContext';
+
+// Import des utilitaires d'impression
+import { 
+  PrintNotification, 
+  PrinterStatusIndicator, 
+  usePrintNotifications,
+  PrintTestComponent 
+} from '../../utils/PrinterUtils';
 
 // Composant FormulaireOrdonnance modifié
 const FormulaireOrdonnance = React.memo(({ 
@@ -453,8 +462,15 @@ const Ordonnances = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
+  // États pour l'impression - NOUVEAUX ÉTATS
+  const [printerStatus, setPrinterStatus] = useState(null);
+  const [printingOrdonnance, setPrintingOrdonnance] = useState(null);
+
   // Utiliser le DataContext pour les médecins
   const { medecins, addMedecin, loading: contextLoading } = useData();
+
+  // Hook pour les notifications d'impression - NOUVEAU
+  const { notification, showSuccess, showError, showInfo, hideNotification } = usePrintNotifications();
 
   // Chargement initial
   useEffect(() => {
@@ -475,10 +491,28 @@ const Ordonnances = () => {
       // Chargement normal
       loadOrdonnances();
       loadAllClients();
+      
+      // Vérifier le statut de l'imprimante - NOUVEAU
+      checkPrinterStatus();
     };
     
     debugAndLoad();
   }, [currentPage, searchTerm]);
+
+  // NOUVELLE FONCTION : Vérifier le statut de l'imprimante
+  const checkPrinterStatus = async () => {
+    try {
+      const status = await ordonnanceService.checkPrinterAvailability();
+      setPrinterStatus(status);
+    } catch (error) {
+      console.error('Erreur vérification imprimante:', error);
+      setPrinterStatus({
+        available: false,
+        method: null,
+        message: 'Erreur de vérification'
+      });
+    }
+  };
 
   // Charger les ordonnances
   const loadOrdonnances = async () => {
@@ -617,6 +651,92 @@ const Ordonnances = () => {
     setShowAddMedecinModal(true);
   }, []);
 
+  // NOUVELLES FONCTIONS D'IMPRESSION
+  const handlePrintOrdonnance = async (ordonnance) => {
+    setPrintingOrdonnance(ordonnance.id);
+    showInfo('Préparation de l\'impression...');
+
+    try {
+      const result = await ordonnanceService.printOrdonnance(ordonnance.id);
+      if (result.success) {
+        showSuccess(`Ordonnance ${ordonnance.numero_ordonnance} envoyée à l'imprimante`);
+      }
+    } catch (error) {
+      console.error('Erreur impression:', error);
+      showError(`Erreur lors de l'impression: ${error.message}`);
+    } finally {
+      setPrintingOrdonnance(null);
+    }
+  };
+
+  const handleDownloadPdf = async (ordonnance) => {
+    setPrintingOrdonnance(ordonnance.id);
+    showInfo('Génération du PDF...');
+
+    try {
+      const result = await ordonnanceService.downloadPdfOrdonnance(
+        ordonnance.id, 
+        ordonnance.numero_ordonnance
+      );
+      if (result.success) {
+        showSuccess(`PDF de l'ordonnance ${ordonnance.numero_ordonnance} téléchargé`);
+      }
+    } catch (error) {
+      console.error('Erreur téléchargement PDF:', error);
+      showError(`Erreur lors du téléchargement: ${error.message}`);
+    } finally {
+      setPrintingOrdonnance(null);
+    }
+  };
+
+  const handleDirectPrint = async (ordonnance) => {
+    setPrintingOrdonnance(ordonnance.id);
+    showInfo('Impression directe en cours...');
+
+    try {
+      const result = await ordonnanceService.printOrdonnanceDirectly(ordonnance.id);
+      if (result.success) {
+        showSuccess(`Impression directe de l'ordonnance ${ordonnance.numero_ordonnance} lancée`);
+      }
+    } catch (error) {
+      console.error('Erreur impression directe:', error);
+      showError(`Erreur lors de l'impression directe: ${error.message}`);
+    } finally {
+      setPrintingOrdonnance(null);
+    }
+  };
+
+  const handleTestPrint = async () => {
+    showInfo('Test d\'impression en cours...');
+    
+    try {
+      // Créer une page de test simple
+      const testWindow = window.open('', '_blank', 'width=600,height=400');
+      testWindow.document.write(`
+        <html>
+          <head><title>Test d'impression</title></head>
+          <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2>Test d'impression</h2>
+            <p>Date: ${new Date().toLocaleString('fr-FR')}</p>
+            <p>Si vous voyez cette page, votre imprimante est configurée correctement.</p>
+            <hr>
+            <p><small>Page de test générée par le système de gestion pharmaceutique</small></p>
+          </body>
+        </html>
+      `);
+      testWindow.document.close();
+      
+      setTimeout(() => {
+        testWindow.print();
+        testWindow.close();
+      }, 500);
+      
+      showSuccess('Test d\'impression envoyé');
+    } catch (error) {
+      showError('Erreur lors du test d\'impression: ' + error.message);
+    }
+  };
+
   // Réinitialiser le formulaire
   const resetForm = useCallback(() => {
     setFormData({
@@ -657,12 +777,13 @@ const Ordonnances = () => {
         setShowAddModal(false);
         resetForm();
         loadOrdonnances();
-        alert('Ordonnance créée avec succès');
+        showSuccess('Ordonnance créée avec succès');
       }
     } catch (err) {
       setError('Erreur lors de la création: ' + err.message);
+      showError('Erreur lors de la création: ' + err.message);
     }
-  }, [formData, medicaments, clientExistant, resetForm]);
+  }, [formData, medicaments, clientExistant, resetForm, showSuccess, showError]);
 
   // Modifier une ordonnance
   const handleUpdateOrdonnance = useCallback(async () => {
@@ -685,12 +806,13 @@ const Ordonnances = () => {
         setShowEditModal(false);
         resetForm();
         loadOrdonnances();
-        alert('Ordonnance modifiée avec succès');
+        showSuccess('Ordonnance modifiée avec succès');
       }
     } catch (err) {
       setError('Erreur lors de la modification: ' + err.message);
+      showError('Erreur lors de la modification: ' + err.message);
     }
-  }, [formData, medicaments, clientExistant, editingId, resetForm]);
+  }, [formData, medicaments, clientExistant, editingId, resetForm, showSuccess, showError]);
 
   // Supprimer une ordonnance
   const handleDelete = async (ordonnance) => {
@@ -700,10 +822,11 @@ const Ordonnances = () => {
       const response = await ordonnanceService.deleteOrdonnance(ordonnance.id);
       if (response.success) {
         loadOrdonnances();
-        alert('Ordonnance supprimée avec succès');
+        showSuccess('Ordonnance supprimée avec succès');
       }
     } catch (err) {
       setError('Erreur lors de la suppression: ' + err.message);
+      showError('Erreur lors de la suppression: ' + err.message);
     }
   };
 
@@ -717,6 +840,7 @@ const Ordonnances = () => {
       }
     } catch (err) {
       setError('Erreur lors du chargement: ' + err.message);
+      showError('Erreur lors du chargement: ' + err.message);
     }
   };
 
@@ -754,6 +878,7 @@ const Ordonnances = () => {
       }
     } catch (err) {
       setError('Erreur lors du chargement de l\'ordonnance: ' + err.message);
+      showError('Erreur lors du chargement de l\'ordonnance: ' + err.message);
     }
   };
 
@@ -776,9 +901,20 @@ const Ordonnances = () => {
 
   return (
     <div className="space-y-6 relative">
+      {/* Notifications d'impression - NOUVEAU */}
+      <PrintNotification
+        isVisible={notification.isVisible}
+        type={notification.type}
+        message={notification.message}
+        onClose={hideNotification}
+      />
+
       {/* Header */}
       <div className="flex justify-between items-center">
-        <div></div>
+        <div className="flex items-center space-x-4">
+          {/* Statut imprimante - NOUVEAU */}
+          <PrinterStatusIndicator status={printerStatus} />
+        </div>
         <h2 className="text-2xl font-bold text-gray-900 font-serif">Gestion des Ordonnances</h2>
         <div className="flex space-x-2">
           <input
@@ -799,6 +935,13 @@ const Ordonnances = () => {
           </button>
         </div>
       </div>
+
+      {/* Test d'imprimante - NOUVEAU */}
+      {printerStatus && (
+        <div className="flex justify-end">
+          <PrintTestComponent onTestPrint={handleTestPrint} />
+        </div>
+      )}
 
       {/* Message d'erreur global */}
       {error && (
@@ -872,7 +1015,6 @@ const Ordonnances = () => {
                               <div className="text-sm text-gray-900">
                                 {ordonnance.client?.nom_complet}
                               </div>
-                
                             </div>
                           </div>
                         </td>
@@ -886,15 +1028,44 @@ const Ordonnances = () => {
                             {ordonnance.total_medicaments || 0} médicament(s)
                           </span>
                         </td>
-                        <td className="px-4 py-2 whitespace-nowrap text-center">
-                          <button
-                            onClick={() => handleViewDetails(ordonnance)}
-                            className="flex items-center space-x-1 text-blue-600 hover:text-blue-900 p-1 rounded transition-colors mx-auto"
-                            title="Voir détails"
-                          >
-                            <Eye className="w-4 h-4" />
-                            <span className="text-sm">Détails</span>
-                          </button>
+                        <td className="px-4 py-2 whitespace-nowrap">
+                          <div className="flex items-center justify-center space-x-2">
+                            {/* Bouton Détails */}
+                            <button
+                              onClick={() => handleViewDetails(ordonnance)}
+                              className="text-blue-600 hover:text-blue-900 p-1 rounded transition-colors"
+                              title="Voir détails"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            
+                            {/* Boutons d'impression - NOUVEAUX */}
+                            <button
+                              onClick={() => handlePrintOrdonnance(ordonnance)}
+                              disabled={printingOrdonnance === ordonnance.id}
+                              className="text-green-600 hover:text-green-900 p-1 rounded transition-colors disabled:opacity-50"
+                              title="Imprimer l'ordonnance"
+                            >
+                              {printingOrdonnance === ordonnance.id ? (
+                                <div className="w-4 h-4 border-2 border-green-600 border-t-transparent rounded-full animate-spin"></div>
+                              ) : (
+                                <Printer className="w-4 h-4" />
+                              )}
+                            </button>
+                            
+                            <button
+                              onClick={() => handleDownloadPdf(ordonnance)}
+                              disabled={printingOrdonnance === ordonnance.id}
+                              className="text-purple-600 hover:text-purple-900 p-1 rounded transition-colors disabled:opacity-50"
+                              title="Télécharger PDF"
+                            >
+                              {printingOrdonnance === ordonnance.id ? (
+                                <div className="w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                              ) : (
+                                <Download className="w-4 h-4" />
+                              )}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -939,245 +1110,264 @@ const Ordonnances = () => {
                     currentPage === totalPages 
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
                       : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  Suivant
-                </button>
+                    }`}
+                  >
+                    Suivant
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Modal d'ajout */}
+        {showAddModal && (
+          <div className="absolute inset-0 flex items-start justify-center mt-2 z-20">
+            <div className="bg-white w-full max-w-4xl p-6 rounded-lg shadow-lg relative mx-4">
+              <FormulaireOrdonnance 
+                isEdit={false}
+                formData={formData}
+                setFormData={setFormData}
+                medicaments={medicaments}
+                setMedicaments={setMedicaments}
+                medecins={medecins}
+                clients={clients}
+                tickets={tickets}
+                setTickets={setTickets}
+                clientExistant={clientExistant}
+                setClientExistant={setClientExistant}
+                loadingMedecins={contextLoading.medecins}
+                loadingClients={loadingClients}
+                loadingTicket={loadingTicket}
+                loadingNumeroSuggestion={loadingNumeroSuggestion}
+                onSubmit={handleCreateOrdonnance}
+                onCancel={() => {
+                  setShowAddModal(false);
+                  resetForm();
+                }}
+                onSuggestNumero={handleSuggestNumero}
+                onSearchTickets={handleSearchTickets}
+                onLoadTicketDetails={handleLoadTicketDetails}
+                onClientSelection={handleClientSelection}
+                onShowAddMedecin={handleShowAddMedecin}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Modal d'édition */}
+        {showEditModal && (
+          <div className="absolute inset-0 flex items-start justify-center mt-2 z-20">
+            <div className="bg-white w-full max-w-4xl p-6 rounded-lg shadow-lg relative mx-4">
+              <FormulaireOrdonnance 
+                isEdit={true}
+                formData={formData}
+                setFormData={setFormData}
+                medicaments={medicaments}
+                setMedicaments={setMedicaments}
+                medecins={medecins}
+                clients={clients}
+                tickets={tickets}
+                setTickets={setTickets}
+                clientExistant={clientExistant}
+                setClientExistant={setClientExistant}
+                loadingMedecins={contextLoading.medecins}
+                loadingClients={loadingClients}
+                loadingTicket={loadingTicket}
+                loadingNumeroSuggestion={loadingNumeroSuggestion}
+                onSubmit={handleUpdateOrdonnance}
+                onCancel={() => {
+                  setShowEditModal(false);
+                  resetForm();
+                }}
+                onSuggestNumero={handleSuggestNumero}
+                onSearchTickets={handleSearchTickets}
+                onLoadTicketDetails={handleLoadTicketDetails}
+                onClientSelection={handleClientSelection}
+                onShowAddMedecin={handleShowAddMedecin}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Modal de détail d'ordonnance AVEC FONCTIONS D'IMPRESSION INTÉGRÉES */}
+        {showDetailModal && selectedOrdonnance && (
+          <div className="absolute inset-0 flex items-start justify-start mt-2 ml-10 z-20">
+            <div className="bg-white w-full max-w-4xl rounded-lg shadow-lg relative">
+              
+              {/* Contenu de l'ordonnance */}
+              <div className="p-6">
+                {/* En-tête */}
+                <div className="flex items-center justify-center relative mb-6">
+                  <button
+                    onClick={() => setShowDetailModal(false)}
+                    className="absolute left-0 text-gray-500 hover:text-gray-700 transition-colors"
+                    title="Fermer"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <h2 className="text-2xl font-medium text-gray-900 text-center">
+                    ORDONNANCE MÉDICALE
+                  </h2>
+                </div>
+
+                <div className="max-h-[60vh] overflow-y-auto">
+                  {/* Informations médecin (gauche) et N°/Date (droite) */}
+                  <div className="grid grid-cols-2 gap-8 mb-6">
+                   {/* Informations médecin - gauche */}
+                    <div>
+                      <p className="font-semibold text-gray-900 mb-2">Médecin prescripteur</p>
+                      <div className="text-sm flex space-x-4">
+                        <div>
+                          <strong>Dr. {selectedOrdonnance.medecin?.nom_complet}</strong>
+                        </div>
+                        <div className="flex flex-col space-y-1">
+                          <span>ONM: {selectedOrdonnance.medecin?.ONM}</span>
+                          <span>Adresse: {selectedOrdonnance.medecin?.adresse || 'Non renseignée'}</span>
+                          <span>Téléphone: {selectedOrdonnance.medecin?.telephone || 'Non renseigné'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* N° ordonnance et date */}
+                    <div>
+                      <div className="space-y-2 text-sm">
+                        <p><strong>N° ordonnance:</strong> {selectedOrdonnance.numero_ordonnance}</p>
+                        <p><strong>Date:</strong> {new Date(selectedOrdonnance.date).toLocaleDateString('fr-FR')}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Informations patient */}
+                  <div className="mb-6 text-sm space-y-1">
+                    <p><strong>Nom patient:</strong> {selectedOrdonnance.client?.nom_complet}</p>
+                    <p><strong>Adresse:</strong> {selectedOrdonnance.client?.adresse}</p>
+                    {selectedOrdonnance.client?.telephone && (
+                      <p><strong>Téléphone:</strong> {selectedOrdonnance.client.telephone}</p>
+                    )}
+                  </div>
+
+                  {/* Tableau des médicaments prescrits */}
+                  <div className="mb-4">
+                    <p className="font-semibold text-gray-900 mb-3">Médicaments prescrits</p>
+                    <div className="bg-white border rounded-lg overflow-hidden">
+                      <table className="w-full">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b">
+                              Nom du médicament
+                            </th>
+                            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b">
+                              Quantité
+                            </th>
+                            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b">
+                              Posologie
+                            </th>
+                            <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b">
+                              Durée
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedOrdonnance.lignes?.map((ligne, index) => (
+                            <tr key={ligne.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-4 py-3 text-sm border-b">
+                                <strong>{ligne.designation}</strong>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-center border-b">
+                                {ligne.quantite}
+                              </td>
+                              <td className="px-4 py-3 text-sm border-b">
+                                {ligne.posologie || 'Non renseigné'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-center border-b">
+                                {ligne.duree || 'Non renseigné'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
               </div>
-            )}
-          </>
+
+              {/* Boutons d'action AVEC FONCTIONS D'IMPRESSION ÉTENDUES */}
+              <div className="border-t bg-gray-50 px-6 py-4 rounded-b-lg">
+                <div className="flex justify-between items-center">
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => handleEditOrdonnance(selectedOrdonnance)}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                    >
+                      Modifier
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowDetailModal(false);
+                        handleDelete(selectedOrdonnance);
+                      }}
+                      className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                    >
+                      Supprimer
+                    </button>
+                    
+                    {/* NOUVEAUX BOUTONS D'IMPRESSION ÉTENDUS */}
+                    
+                    <button
+                      onClick={() => handleDirectPrint(selectedOrdonnance)}
+                      disabled={printingOrdonnance === selectedOrdonnance.id}
+                      className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                      title="Impression directe"
+                    >
+                      {printingOrdonnance === selectedOrdonnance.id ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline mr-2"></div>
+                      ) : (
+                        <Printer className="w-4 h-4 inline mr-2" />
+                      )}
+                      Imprimer
+                    </button>
+                    
+                    <button
+                      onClick={() => handleDownloadPdf(selectedOrdonnance)}
+                      disabled={printingOrdonnance === selectedOrdonnance.id}
+                      className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                      title="Télécharger en PDF"
+                    >
+                      {printingOrdonnance === selectedOrdonnance.id ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline mr-2"></div>
+                      ) : (
+                        <Download className="w-4 h-4 inline mr-2" />
+                      )}
+                      Telecharger
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setShowDetailModal(false)}
+                    className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                  >
+                    Fermer
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal d'ajout de médecin - NOUVEAU FORMULAIRE INTÉGRÉ */}
+        {showAddMedecinModal && (
+          <div className="absolute inset-0 flex items-start justify-center mt-10 z-30">
+            <FormulaireMedecin
+              onSubmit={handleAddMedecin}
+              onCancel={() => setShowAddMedecinModal(false)}
+              loading={loadingAddMedecin}
+            />
+          </div>
         )}
       </div>
+    );
+  };
 
-      {/* Modal d'ajout */}
-      {showAddModal && (
-        <div className="absolute inset-0 flex items-start justify-center mt-2 z-20">
-          <div className="bg-white w-full max-w-4xl p-6 rounded-lg shadow-lg relative mx-4">
-            <FormulaireOrdonnance 
-              isEdit={false}
-              formData={formData}
-              setFormData={setFormData}
-              medicaments={medicaments}
-              setMedicaments={setMedicaments}
-              medecins={medecins}
-              clients={clients}
-              tickets={tickets}
-              setTickets={setTickets}
-              clientExistant={clientExistant}
-              setClientExistant={setClientExistant}
-              loadingMedecins={contextLoading.medecins}
-              loadingClients={loadingClients}
-              loadingTicket={loadingTicket}
-              loadingNumeroSuggestion={loadingNumeroSuggestion}
-              onSubmit={handleCreateOrdonnance}
-              onCancel={() => {
-                setShowAddModal(false);
-                resetForm();
-              }}
-              onSuggestNumero={handleSuggestNumero}
-              onSearchTickets={handleSearchTickets}
-              onLoadTicketDetails={handleLoadTicketDetails}
-              onClientSelection={handleClientSelection}
-              onShowAddMedecin={handleShowAddMedecin}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Modal d'édition */}
-      {showEditModal && (
-        <div className="absolute inset-0 flex items-start justify-center mt-2 z-20">
-          <div className="bg-white w-full max-w-4xl p-6 rounded-lg shadow-lg relative mx-4">
-            <FormulaireOrdonnance 
-              isEdit={true}
-              formData={formData}
-              setFormData={setFormData}
-              medicaments={medicaments}
-              setMedicaments={setMedicaments}
-              medecins={medecins}
-              clients={clients}
-              tickets={tickets}
-              setTickets={setTickets}
-              clientExistant={clientExistant}
-              setClientExistant={setClientExistant}
-              loadingMedecins={contextLoading.medecins}
-              loadingClients={loadingClients}
-              loadingTicket={loadingTicket}
-              loadingNumeroSuggestion={loadingNumeroSuggestion}
-              onSubmit={handleUpdateOrdonnance}
-              onCancel={() => {
-                setShowEditModal(false);
-                resetForm();
-              }}
-              onSuggestNumero={handleSuggestNumero}
-              onSearchTickets={handleSearchTickets}
-              onLoadTicketDetails={handleLoadTicketDetails}
-              onClientSelection={handleClientSelection}
-              onShowAddMedecin={handleShowAddMedecin}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Modal de détail d'ordonnance */}
-      {showDetailModal && selectedOrdonnance && (
-        <div className="absolute inset-0 flex items-start justify-start mt-2 ml-10 z-20">
-          <div className="bg-white w-full max-w-4xl rounded-lg shadow-lg relative">
-            
-            {/* Contenu de l'ordonnance */}
-            <div className="p-6">
-              {/* En-tête */}
-              <div className="flex items-center justify-center relative mb-6">
-                <button
-                  onClick={() => setShowDetailModal(false)}
-                  className="absolute left-0 text-gray-500 hover:text-gray-700 transition-colors"
-                  title="Fermer"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                </button>
-                <h2 className="text-2xl font-medium text-gray-900 text-center">
-                  ORDONNANCE MÉDICALE
-                </h2>
-              </div>
-
-              <div className="max-h-[60vh] overflow-y-auto">
-                {/* Informations médecin (gauche) et N°/Date (droite) */}
-                <div className="grid grid-cols-2 gap-8 mb-6">
-                 {/* Informations médecin - gauche */}
-                  <div>
-                    <p className="font-semibold text-gray-900 mb-2">Médecin prescripteur</p>
-                    <div className="text-sm flex space-x-4">
-                      <div>
-                        <strong>Dr. {selectedOrdonnance.medecin?.nom_complet}</strong>
-                      </div>
-                      <div className="flex flex-col space-y-1">
-                        <span>ONM: {selectedOrdonnance.medecin?.ONM}</span>
-                        <span>Adresse: {selectedOrdonnance.medecin?.adresse || 'Non renseignée'}</span>
-                        <span>Téléphone: {selectedOrdonnance.medecin?.telephone || 'Non renseigné'}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* N° ordonnance et date */}
-                  <div>
-                    <div className="space-y-2 text-sm">
-                      <p><strong>N° ordonnance:</strong> {selectedOrdonnance.numero_ordonnance}</p>
-                      <p><strong>Date:</strong> {new Date(selectedOrdonnance.date).toLocaleDateString('fr-FR')}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Informations patient */}
-                <div className="mb-6 text-sm space-y-1">
-                  <p><strong>Nom patient:</strong> {selectedOrdonnance.client?.nom_complet}</p>
-                  <p><strong>Adresse:</strong> {selectedOrdonnance.client?.adresse}</p>
-                  {selectedOrdonnance.client?.telephone && (
-                    <p><strong>Téléphone:</strong> {selectedOrdonnance.client.telephone}</p>
-                  )}
-                </div>
-
-                {/* Tableau des médicaments prescrits */}
-                <div className="mb-4">
-                  <p className="font-semibold text-gray-900 mb-3">Médicaments prescrits</p>
-                  <div className="bg-white border rounded-lg overflow-hidden">
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b">
-                            Nom du médicament
-                          </th>
-                          <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b">
-                            Quantité
-                          </th>
-                          <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b">
-                            Posologie
-                          </th>
-                          <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700 border-b">
-                            Durée
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedOrdonnance.lignes?.map((ligne, index) => (
-                          <tr key={ligne.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                            <td className="px-4 py-3 text-sm border-b">
-                              <strong>{ligne.designation}</strong>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-center border-b">
-                              {ligne.quantite}
-                            </td>
-                            <td className="px-4 py-3 text-sm border-b">
-                              {ligne.posologie || 'Non renseigné'}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-center border-b">
-                              {ligne.duree || 'Non renseigné'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Boutons d'action */}
-            <div className="border-t bg-gray-50 px-6 py-4 rounded-b-lg">
-              <div className="flex justify-between items-center">
-                <div className="flex space-x-3">
-                  <button
-                    onClick={() => handleEditOrdonnance(selectedOrdonnance)}
-                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-                  >
-                    Modifier
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowDetailModal(false);
-                      handleDelete(selectedOrdonnance);
-                    }}
-                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-                  >
-                    Supprimer
-                  </button>
-                  <button
-                    onClick={() => {
-                      // Fonction d'impression à implémenter
-                      console.log('Impression de l\'ordonnance:', selectedOrdonnance.numero_ordonnance);
-                      alert('Fonction d\'impression à implémenter');
-                    }}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-                  >
-                    <Printer className="w-4 h-4 inline mr-2" />
-                    Imprimer
-                  </button>
-                </div>
-                <button
-                  onClick={() => setShowDetailModal(false)}
-                  className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-                >
-                  Fermer
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal d'ajout de médecin - NOUVEAU FORMULAIRE INTÉGRÉ */}
-      {showAddMedecinModal && (
-        <div className="absolute inset-0 flex items-start justify-center mt-10 z-30">
-          <FormulaireMedecin
-            onSubmit={handleAddMedecin}
-            onCancel={() => setShowAddMedecinModal(false)}
-            loading={loadingAddMedecin}
-          />
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default Ordonnances
+  export default Ordonnances;

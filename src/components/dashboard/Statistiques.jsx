@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import statistiquesService from '../../services/StatistiquesService';
+import { useStatisticsRefresh } from '../../../central/hooks/useStatisticsRefresh';
 
 const Statistiques = () => {
   const [loading, setLoading] = useState(true);
@@ -9,16 +10,15 @@ const Statistiques = () => {
   const [ventesData, setVentesData] = useState([]);
   const [topMedicaments, setTopMedicaments] = useState([]);
   const [dossierActuel, setDossierActuel] = useState('');
+  const [lastRefresh, setLastRefresh] = useState(new Date());
 
-  useEffect(() => {
-    loadStatistiques();
-  }, []);
-
-  const loadStatistiques = async () => {
+  // Fonction de rechargement des statistiques
+  const loadStatistiques = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
+      console.log('🔄 Chargement des statistiques...');
       const result = await statistiquesService.getAllStatistiques();
 
       // Dashboard
@@ -51,13 +51,25 @@ const Statistiques = () => {
         console.warn('Erreurs lors du chargement des statistiques:', result.errors);
       }
 
+      // Mettre à jour l'heure du dernier refresh
+      setLastRefresh(new Date());
+      console.log('✅ Statistiques rechargées avec succès');
+
     } catch (err) {
       console.error('Erreur lors du chargement des statistiques:', err);
       setError(err.message || 'Erreur lors du chargement des statistiques');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Utiliser le hook personnalisé pour écouter les événements
+  useStatisticsRefresh(loadStatistiques);
+
+  // Chargement initial
+  useEffect(() => {
+    loadStatistiques();
+  }, [loadStatistiques]);
 
   const handleRetry = () => {
     loadStatistiques();
@@ -125,13 +137,29 @@ const Statistiques = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900 font-serif">Tableau de bord</h2>
-        {dossierActuel && (
-          <div className="bg-blue-50 px-3 py-1 rounded-full">
-            <span className="text-sm text-blue-700 font-medium">
-              Dossier: {dossierActuel}
-            </span>
+        <div className="flex items-center space-x-4">
+          {dossierActuel && (
+            <div className="bg-blue-50 px-3 py-1 rounded-full">
+              <span className="text-sm text-blue-700 font-medium">
+                Dossier: {dossierActuel}
+              </span>
+            </div>
+          )}
+          
+          {/* Indicateur de dernière mise à jour + bouton refresh manuel */}
+          <div className="flex items-center space-x-2 text-sm text-gray-500">
+            <span>Mis à jour: {lastRefresh.toLocaleTimeString()}</span>
+            <button
+              onClick={handleRetry}
+              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              title="Actualiser les statistiques"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Cartes de statistiques */}

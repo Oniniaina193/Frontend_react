@@ -1,3 +1,6 @@
+// services/StatistiquesService.js (version avec événements)
+import eventBus, { EVENTS } from '../utils/EventBus';
+
 const getApiUrl = () => {
   try {
     if (import.meta.env && import.meta.env.VITE_API_URL) {
@@ -24,6 +27,10 @@ class StatistiquesService {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
+    
+    // Compteur pour éviter les refresh trop fréquents
+    this.lastRefreshTime = 0;
+    this.refreshDebounceMs = 1000; // 1 seconde
   }
 
   getToken() {
@@ -36,6 +43,19 @@ class StatistiquesService {
       ...this.headers,
       ...(token && { Authorization: `Bearer ${token}` })
     };
+  }
+
+  /**
+   * Vérifier si un refresh peut avoir lieu (anti-spam)
+   */
+  canRefresh() {
+    const now = Date.now();
+    if (now - this.lastRefreshTime < this.refreshDebounceMs) {
+      console.log('⏳ Refresh trop fréquent, ignoré');
+      return false;
+    }
+    this.lastRefreshTime = now;
+    return true;
   }
 
   /**
@@ -125,6 +145,8 @@ class StatistiquesService {
    */
   async getAllStatistiques() {
     try {
+      console.log('📊 Début du chargement des statistiques...');
+      
       const [dashboardStats, ventesMensuelles, topMedicaments] = await Promise.allSettled([
         this.getDashboardStats(),
         this.getVentesMensuelles(),
@@ -149,11 +171,60 @@ class StatistiquesService {
         result.errors.push({ type: 'topMedicaments', error: topMedicaments.reason });
       }
 
+      console.log('📊 Statistiques chargées:', result);
+
+      // Émettre un événement pour indiquer que les stats ont été rafraîchies
+      eventBus.emit(EVENTS.STATS_REFRESHED, {
+        success: result.errors.length === 0,
+        timestamp: new Date(),
+        errors: result.errors
+      });
+
       return result;
     } catch (error) {
       console.error('Erreur getAllStatistiques:', error);
+      
+      // Émettre un événement d'erreur
+      eventBus.emit(EVENTS.STATS_REFRESHED, {
+        success: false,
+        timestamp: new Date(),
+        error: error.message
+      });
+      
       throw error;
     }
+  }
+
+  /**
+   * 🆕 NOUVELLE MÉTHODE: Refresh intelligent des statistiques
+   */
+  async refreshStatistiques(force = false) {
+    if (!force && !this.canRefresh()) {
+      console.log('⚠️ Refresh ignoré (trop fréquent)');
+      return null;
+    }
+
+    try {
+      console.log('🔄 Refresh des statistiques demandé');
+      const result = await this.getAllStatistiques();
+      
+      console.log('✅ Refresh des statistiques terminé');
+      return result;
+    } catch (error) {
+      console.error('❌ Erreur lors du refresh des statistiques:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 🆕 MÉTHODE UTILITAIRE: Demander un refresh via événement
+   */
+  requestRefresh(source = 'manual') {
+    console.log(`📡 Demande de refresh depuis: ${source}`);
+    eventBus.emit(EVENTS.STATS_REFRESH_NEEDED, { 
+      source, 
+      timestamp: new Date() 
+    });
   }
 
   /**
@@ -225,6 +296,48 @@ class StatistiquesService {
         icon: '📊'
       }
     ];
+  }
+
+  /**
+   * 🆕 MÉTHODE DE DEBUG: Vérifier l'état du système d'événements
+   */
+  debugEventSystem() {
+    console.log('=== DEBUG SYSTÈME D\'ÉVÉNEMENTS ===');
+    console.log('EventBus disponible:', !!eventBus);
+    console.log('Événements actifs:', eventBus.getActiveEvents?.() || 'Non disponible');
+    console.log('Dernier refresh:', new Date(this.lastRefreshTime));
+    console.log('Débounce (ms):', this.refreshDebounceMs);
+    
+    // Test d'émission
+    console.log('📡 Test d\'émission d\'événement...');
+    eventBus.emit('test:debug', { timestamp: new Date() });
+  }
+
+  /**
+   * 🆕 INITIALISATION: Configurer les listeners d'événements
+   * À appeler dans votre App.js ou au démarrage de l'application
+   */
+  initializeEventListeners() {
+    console.log('🎧 Initialisation des listeners StatistiquesService');
+
+    // Écouter les changements de dossier pour forcer un refresh
+    eventBus.on(EVENTS.DOSSIER_CHANGED, (data) => {
+      console.log('📁 Changement de dossier détecté:', data);
+      // Petit délai pour laisser le serveur se synchroniser
+      setTimeout(() => {
+        this.requestRefresh('dossier_change');
+      }, 500);
+    });
+
+    console.log('✅ Listeners StatistiquesService initialisés');
+  }
+
+  /**
+   * 🆕 NETTOYAGE: Supprimer les listeners (pour éviter les fuites mémoire)
+   */
+  cleanup() {
+    // Ici vous pourriez nettoyer les listeners si nécessaire
+    console.log('🧹 Nettoyage StatistiquesService');
   }
 }
 

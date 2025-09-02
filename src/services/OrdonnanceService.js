@@ -1,3 +1,6 @@
+// services/OrdonnanceService.js (version avec événements)
+import eventBus, { EVENTS } from '../utils/EventBus';
+
 const getApiUrl = () => {
   try {
     if (import.meta.env && import.meta.env.VITE_API_URL) {
@@ -61,9 +64,8 @@ class OrdonnanceService {
     return this.getCurrentDossier();
   }
 
-
-  // Récupérer le dossier actuel - adaptez selon votre gestion
- getCurrentDossier() {
+  // Récupérer le dossier actuel
+  getCurrentDossier() {
     const sessionDossier = sessionStorage.getItem('current_dossier_vente');
     const localDossier = localStorage.getItem('current_dossier_vente');
     
@@ -83,8 +85,7 @@ class OrdonnanceService {
     return 'default';
   }
 
-
-  // Ajouter le dossier aux paramètres pour les requêtes qui en ont besoin
+  // Ajouter le dossier aux paramètres
   addDossierToParams(params = {}) {
     return {
       ...params,
@@ -178,6 +179,10 @@ class OrdonnanceService {
         throw new Error(data.message || 'Erreur lors de la création de l\'ordonnance');
       }
       
+      // 🔥 ÉMETTRE L'ÉVÉNEMENT DE CRÉATION
+      eventBus.emit(EVENTS.ORDONNANCE_CREATED, data.data);
+      console.log('📡 Événement ORDONNANCE_CREATED émis:', data.data);
+      
       return data;
     } catch (error) {
       console.error('Erreur createOrdonnance:', error);
@@ -204,6 +209,10 @@ class OrdonnanceService {
         throw new Error(data.message || 'Erreur lors de la modification de l\'ordonnance');
       }
       
+      // 🔥 ÉMETTRE L'ÉVÉNEMENT DE MISE À JOUR
+      eventBus.emit(EVENTS.ORDONNANCE_UPDATED, { id, data: data.data });
+      console.log('📡 Événement ORDONNANCE_UPDATED émis:', { id, data: data.data });
+      
       return data;
     } catch (error) {
       console.error('Erreur updateOrdonnance:', error);
@@ -223,6 +232,10 @@ class OrdonnanceService {
       if (!response.ok) {
         throw new Error(data.message || 'Erreur lors de la suppression de l\'ordonnance');
       }
+      
+      // 🔥 ÉMETTRE L'ÉVÉNEMENT DE SUPPRESSION
+      eventBus.emit(EVENTS.ORDONNANCE_DELETED, { id, deletedData: data });
+      console.log('📡 Événement ORDONNANCE_DELETED émis pour ID:', id);
       
       return data;
     } catch (error) {
@@ -281,8 +294,13 @@ class OrdonnanceService {
     }
   }
 
+  // 🆕 NOUVELLE MÉTHODE: Demander un refresh des statistiques
+  requestStatsRefresh() {
+    eventBus.emit(EVENTS.STATS_REFRESH_NEEDED, { source: 'OrdonnanceService' });
+    console.log('📡 Refresh des statistiques demandé depuis OrdonnanceService');
+  }
 
-  // Médecins pour sélection - PAS besoin de dossier selon votre contrôleur
+  // Médecins pour sélection
   async getMedecinsForSelection() {
     try {
       const response = await fetch(`${this.baseURL}/data/medecins-selection`, {
@@ -303,7 +321,7 @@ class OrdonnanceService {
     }
   }
 
-  // Suggestion de numéro d'ordonnance - BESOIN du dossier
+  // Suggestion de numéro d'ordonnance
   async suggestNumeroOrdonnance() {
     try {
       const currentDossier = this.getCurrentDossier();
@@ -330,7 +348,6 @@ class OrdonnanceService {
   // Vérifier l'unicité du numéro d'ordonnance
   async checkNumeroUnique(numero) {
     try {
-      // La vérification se fait côté serveur lors de la validation
       return true;
     } catch (error) {
       console.error('Erreur checkNumeroUnique:', error);
@@ -338,7 +355,7 @@ class OrdonnanceService {
     }
   }
 
-  // Médicaments avec ordonnances - BESOIN du dossier
+  // Médicaments avec ordonnances
   async getMedicamentsAvecOrdonnances() {
     try {
       const currentDossier = this.getCurrentDossier();
@@ -362,7 +379,7 @@ class OrdonnanceService {
     }
   }
 
-  // Historique par médicament - BESOIN du dossier
+  // Historique par médicament
   async getHistoriqueParMedicament(params = {}) {
     try {
       const paramsWithDossier = this.addDossierToParams(params);
@@ -373,7 +390,6 @@ class OrdonnanceService {
       if (paramsWithDossier.date) queryParams.append('date', paramsWithDossier.date);
       if (paramsWithDossier.page) queryParams.append('page', paramsWithDossier.page);
       if (paramsWithDossier.per_page) queryParams.append('per_page', paramsWithDossier.per_page);
-      // Le dossier est requis par le contrôleur
       queryParams.append('current_dossier_vente', paramsWithDossier.current_dossier_vente);
 
       if (!paramsWithDossier.medicament && !paramsWithDossier.date) {
@@ -397,7 +413,7 @@ class OrdonnanceService {
     }
   }
 
-  // Statistiques du dossier - BESOIN du dossier
+  // Statistiques du dossier
   async getStatistiquesDossier() {
     try {
       const currentDossier = this.getCurrentDossier();
@@ -578,7 +594,201 @@ class OrdonnanceService {
 
     return errors;
   }
+
+  /**
+   * Impression HTML de l'ordonnance
+   */
+  async printOrdonnance(ordonnanceId) {
+    try {
+      console.log('🖨️ Impression de l\'ordonnance ID:', ordonnanceId);
+      
+      const response = await fetch(`${this.baseURL}/print/${ordonnanceId}`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Erreur lors de la génération de l\'ordonnance imprimable');
+      }
+      
+      // Créer une nouvelle fenêtre pour l'impression
+      const printWindow = window.open('', '_blank', 'width=800,height=1000,scrollbars=yes');
+      
+      if (!printWindow) {
+        throw new Error('Impossible d\'ouvrir la fenêtre d\'impression. Vérifiez que les popups ne sont pas bloqués.');
+      }
+      
+      // Écrire le HTML dans la nouvelle fenêtre
+      printWindow.document.write(data.data.html);
+      printWindow.document.close();
+      
+      // Attendre que le contenu soit chargé puis imprimer
+      printWindow.onload = function() {
+        setTimeout(() => {
+          printWindow.print();
+          // Optionnel : fermer la fenêtre après impression
+          printWindow.onafterprint = function() {
+            printWindow.close();
+          };
+        }, 500);
+      };
+      
+      return {
+        success: true,
+        message: 'Fenêtre d\'impression ouverte'
+      };
+      
+    } catch (error) {
+      console.error('❌ Erreur impression ordonnance:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Téléchargement PDF de l'ordonnance
+   */
+  async downloadPdfOrdonnance(ordonnanceId, numeroOrdonnance) {
+    try {
+      console.log('📄 Téléchargement PDF de l\'ordonnance ID:', ordonnanceId);
+      
+      const response = await fetch(`${this.baseURL}/pdf/${ordonnanceId}`, {
+        method: 'GET',
+        headers: {
+          ...this.getHeaders(),
+          'Accept': 'application/pdf'
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erreur lors de la génération du PDF');
+      }
+      
+      // Créer un blob à partir de la réponse
+      const blob = await response.blob();
+      
+      // Créer un lien de téléchargement
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `ordonnance_${numeroOrdonnance}_${new Date().toISOString().split('T')[0]}.pdf`;
+      
+      // Déclencher le téléchargement
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Nettoyer l'URL du blob
+      window.URL.revokeObjectURL(url);
+      
+      return {
+        success: true,
+        message: 'PDF téléchargé avec succès'
+      };
+      
+    } catch (error) {
+      console.error('❌ Erreur téléchargement PDF:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Impression directe (alternative moderne avec l'API Print)
+   */
+  async printOrdonnanceDirectly(ordonnanceId) {
+    try {
+      // Vérifier si l'API Print est supportée
+      if (!('print' in window)) {
+        throw new Error('L\'impression directe n\'est pas supportée par votre navigateur');
+      }
+      
+      // Récupérer le HTML formaté
+      const response = await fetch(`${this.baseURL}/print/${ordonnanceId}`, {
+        method: 'GET',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Erreur lors de la génération de l\'ordonnance');
+      }
+      
+      // Créer un iframe invisible pour l'impression
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'absolute';
+      iframe.style.top = '-1000px';
+      iframe.style.left = '-1000px';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      
+      document.body.appendChild(iframe);
+      
+      // Écrire le contenu dans l'iframe
+      const iframeDoc = iframe.contentWindow.document;
+      iframeDoc.open();
+      iframeDoc.write(data.data.html);
+      iframeDoc.close();
+      
+      // Imprimer le contenu de l'iframe
+      setTimeout(() => {
+        iframe.contentWindow.print();
+        
+        // Nettoyer l'iframe après impression
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 1000);
+      }, 500);
+      
+      return {
+        success: true,
+        message: 'Impression lancée'
+      };
+      
+    } catch (error) {
+      console.error('❌ Erreur impression directe:', error);
+      // Fallback vers l'impression normale
+      return this.printOrdonnance(ordonnanceId);
+    }
+  }
+
+  /**
+   * Détecter si une imprimante est disponible
+   */
+  async checkPrinterAvailability() {
+    try {
+      // Méthode moderne avec l'API Print
+      if ('print' in window && 'navigator' in window && 'serviceWorker' in navigator) {
+        return {
+          available: true,
+          method: 'modern',
+          message: 'Imprimante détectée (API moderne)'
+        };
+      }
+      
+      // Méthode basique
+      return {
+        available: true,
+        method: 'basic',
+        message: 'Impression disponible (méthode basique)'
+      };
+      
+    } catch (error) {
+      return {
+        available: false,
+        method: null,
+        message: 'Impression non disponible: ' + error.message
+      };
+    }
+  }
 }
+
 
 const ordonnanceService = new OrdonnanceService();
 

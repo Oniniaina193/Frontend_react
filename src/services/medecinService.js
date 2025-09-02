@@ -1,3 +1,6 @@
+// services/MedecinService.js
+import eventBus, { EVENTS } from '../utils/EventBus';
+
 const getApiUrl = () => {
   try {
     if (import.meta.env && import.meta.env.VITE_API_URL) {
@@ -65,6 +68,11 @@ class MedecinService {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Erreur lors de la création du médecin');
+      
+      // 🔥 ÉMETTRE L'ÉVÉNEMENT DE CRÉATION
+      eventBus.emit(EVENTS.MEDECIN_CREATED, data.data);
+      console.log('📡 Événement MEDECIN_CREATED émis:', data.data);
+      
       return data;
     } catch (error) {
       console.error('Erreur createMedecin:', error);
@@ -81,6 +89,11 @@ class MedecinService {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Erreur lors de la modification du médecin');
+      
+      // 🔥 ÉMETTRE L'ÉVÉNEMENT DE MISE À JOUR
+      eventBus.emit(EVENTS.MEDECIN_UPDATED, { id, data: data.data });
+      console.log('📡 Événement MEDECIN_UPDATED émis:', { id, data: data.data });
+      
       return data;
     } catch (error) {
       console.error('Erreur updateMedecin:', error);
@@ -96,6 +109,11 @@ class MedecinService {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || 'Erreur lors de la suppression du médecin');
+      
+      // 🔥 ÉMETTRE L'ÉVÉNEMENT DE SUPPRESSION
+      eventBus.emit(EVENTS.MEDECIN_DELETED, { id, deletedData: data });
+      console.log('📡 Événement MEDECIN_DELETED émis pour ID:', id);
+      
       return data;
     } catch (error) {
       console.error('Erreur deleteMedecin:', error);
@@ -137,6 +155,12 @@ class MedecinService {
       console.error('Erreur searchMedecins:', error);
       throw error;
     }
+  }
+
+  // 🆕 NOUVELLE MÉTHODE: Demander un refresh des statistiques
+  requestStatsRefresh() {
+    eventBus.emit(EVENTS.STATS_REFRESH_NEEDED, { source: 'MedecinService' });
+    console.log('📡 Refresh des statistiques demandé depuis MedecinService');
   }
 }
 
