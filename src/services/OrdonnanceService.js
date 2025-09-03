@@ -787,6 +787,218 @@ class OrdonnanceService {
       };
     }
   }
+
+
+  // Ajoutez ces méthodes à votre classe OrdonnanceService
+
+/**
+ * Exporter la liste des ordonnances en PDF
+ */
+async exportHistoriqueList(params = {}) {
+  try {
+    console.log('📄 Export PDF de la liste d\'ordonnances avec params:', params);
+    
+    const currentDossier = this.getCurrentDossier();
+    const exportParams = {
+      ...params,
+      current_dossier_vente: currentDossier,
+      format: 'pdf'
+    };
+    
+    const queryParams = new URLSearchParams();
+    if (exportParams.medicament) queryParams.append('medicament', exportParams.medicament);
+    if (exportParams.date) queryParams.append('date', exportParams.date);
+    if (exportParams.titre) queryParams.append('titre', exportParams.titre);
+    queryParams.append('current_dossier_vente', currentDossier);
+    queryParams.append('format', 'pdf');
+    
+    const url = `${this.baseURL}/historique/export?${queryParams.toString()}`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...this.getHeaders(),
+        'Accept': 'application/pdf'
+      },
+      credentials: 'include',
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Erreur lors de l\'export PDF');
+    }
+    
+    // Créer un blob à partir de la réponse
+    const blob = await response.blob();
+    
+    // Générer le nom de fichier
+    const today = new Date().toISOString().split('T')[0];
+    const fileName = `historique_ordonnances_${today}.pdf`;
+    
+    // Créer un lien de téléchargement
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = fileName;
+    
+    // Déclencher le téléchargement
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Nettoyer l'URL du blob
+    window.URL.revokeObjectURL(downloadUrl);
+    
+    return {
+      success: true,
+      message: 'Export PDF généré avec succès'
+    };
+    
+  } catch (error) {
+    console.error('❌ Erreur export PDF liste:', error);
+    throw error;
+  }
+}
+
+/**
+ * Imprimer la liste des ordonnances
+ */
+async printHistoriqueList(params = {}) {
+  try {
+    console.log('🖨️ Impression de la liste d\'ordonnances avec params:', params);
+    
+    const currentDossier = this.getCurrentDossier();
+    const printParams = {
+      ...params,
+      current_dossier_vente: currentDossier
+    };
+    
+    const queryParams = new URLSearchParams();
+    if (printParams.medicament) queryParams.append('medicament', printParams.medicament);
+    if (printParams.date) queryParams.append('date', printParams.date);
+    if (printParams.titre) queryParams.append('titre', printParams.titre);
+    queryParams.append('current_dossier_vente', currentDossier);
+    
+    const url = `${this.baseURL}/historique/print?${queryParams.toString()}`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(),
+      credentials: 'include',
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || 'Erreur lors de la génération de la liste imprimable');
+    }
+    
+    // Créer une nouvelle fenêtre pour l'impression
+    const printWindow = window.open('', '_blank', 'width=800,height=1000,scrollbars=yes');
+    
+    if (!printWindow) {
+      throw new Error('Impossible d\'ouvrir la fenêtre d\'impression. Vérifiez que les popups ne sont pas bloqués.');
+    }
+    
+    // Écrire le HTML dans la nouvelle fenêtre
+    printWindow.document.write(data.data.html);
+    printWindow.document.close();
+    
+    // Attendre que le contenu soit chargé puis imprimer
+    printWindow.onload = function() {
+      setTimeout(() => {
+        printWindow.print();
+        // Optionnel : fermer la fenêtre après impression
+        printWindow.onafterprint = function() {
+          printWindow.close();
+        };
+      }, 500);
+    };
+    
+    return {
+      success: true,
+      message: 'Impression de la liste lancée'
+    };
+    
+  } catch (error) {
+    console.error('❌ Erreur impression liste:', error);
+    throw error;
+  }
+}
+
+/**
+ * Méthode alternative pour impression directe de liste (avec iframe)
+ */
+async printHistoriqueListDirect(params = {}) {
+  try {
+    console.log('🖨️ Impression directe de la liste (iframe)');
+    
+    // Récupérer le HTML formaté
+    const currentDossier = this.getCurrentDossier();
+    const printParams = {
+      ...params,
+      current_dossier_vente: currentDossier
+    };
+    
+    const queryParams = new URLSearchParams();
+    if (printParams.medicament) queryParams.append('medicament', printParams.medicament);
+    if (printParams.date) queryParams.append('date', printParams.date);
+    if (printParams.titre) queryParams.append('titre', printParams.titre);
+    queryParams.append('current_dossier_vente', currentDossier);
+    
+    const url = `${this.baseURL}/historique/print?${queryParams.toString()}`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(),
+      credentials: 'include',
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || 'Erreur lors de la génération de la liste');
+    }
+    
+    // Créer un iframe invisible pour l'impression
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'absolute';
+    iframe.style.top = '-1000px';
+    iframe.style.left = '-1000px';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    
+    document.body.appendChild(iframe);
+    
+    // Écrire le contenu dans l'iframe
+    const iframeDoc = iframe.contentWindow.document;
+    iframeDoc.open();
+    iframeDoc.write(data.data.html);
+    iframeDoc.close();
+    
+    // Imprimer le contenu de l'iframe
+    setTimeout(() => {
+      iframe.contentWindow.print();
+      
+      // Nettoyer l'iframe après impression
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
+    }, 500);
+    
+    return {
+      success: true,
+      message: 'Impression directe lancée'
+    };
+    
+  } catch (error) {
+    console.error('❌ Erreur impression directe liste:', error);
+    // Fallback vers l'impression normale
+    return this.printHistoriqueList(params);
+  }
+}
+
 }
 
 

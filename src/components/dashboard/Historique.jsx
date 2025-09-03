@@ -13,7 +13,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 
-import ordonnanceService from '../../services/ordonnanceService';
+import ordonnanceService from '../../services/OrdonnanceService';
 import { 
   PrintNotification, 
   usePrintNotifications 

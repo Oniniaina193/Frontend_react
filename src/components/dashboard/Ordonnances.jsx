@@ -17,7 +17,7 @@ import {
   Download
 } from 'lucide-react';
 
-import ordonnanceService from '../../services/ordonnanceService';
+import ordonnanceService from '../../services/OrdonnanceService';
 import clientService from '../../services/ClientService';
 import medecinService from '../../services/medecinService';
 import { useData } from '../../contexts/DataContext';
