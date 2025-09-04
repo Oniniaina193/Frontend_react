@@ -137,15 +137,7 @@ const Statistiques = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900 font-serif">Tableau de bord</h2>
-        <div className="flex items-center space-x-4">
-          {dossierActuel && (
-            <div className="bg-blue-50 px-3 py-1 rounded-full">
-              <span className="text-sm text-blue-700 font-medium">
-                Dossier: {dossierActuel}
-              </span>
-            </div>
-          )}
-          
+        <div className="flex items-center space-x-4">    
           {/* Indicateur de dernière mise à jour + bouton refresh manuel */}
           <div className="flex items-center space-x-2 text-sm text-gray-500">
             <span>Mis à jour: {lastRefresh.toLocaleTimeString()}</span>

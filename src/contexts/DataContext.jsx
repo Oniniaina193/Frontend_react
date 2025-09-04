@@ -1,5 +1,5 @@
 // contexts/DataContext.js
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import directAccessService from '../services/directAccessService';
 import medicamentService from '../services/medicamentService';
 import medecinService from '../services/medecinService';
@@ -15,6 +15,8 @@ export const useData = () => {
 };
 
 export const DataProvider = ({ children }) => {
+  // ==================== ÉTATS PRINCIPAUX ====================
+  
   // États pour chaque type de données
   const [articles, setArticles] = useState([]);
   const [families, setFamilies] = useState([]);
@@ -37,17 +39,86 @@ export const DataProvider = ({ children }) => {
   const [connectionStatus, setConnectionStatus] = useState('unknown');
   const [connectionInfo, setConnectionInfo] = useState(null);
 
-  // Cache des requêtes pour éviter les doublons
+  // Cache optimisé avec nettoyage automatique
   const [cache, setCache] = useState({
-    articlesSearches: new Map(), // search term -> résultats
+    articlesSearches: new Map(),
     lastSearch: '',
     lastFamily: ''
   });
 
-  // CHARGEMENT INITIAL - UNE SEULE FOIS
+  // Références pour éviter les appels multiples simultanés
+  const searchAbortControllerRef = useRef(null);
+  const lastSearchRef = useRef('');
+
+  // ==================== EFFECTS ET INITIALISATION ====================
+
   useEffect(() => {
     loadInitialData();
+    
+    // Nettoyage du cache toutes les 10 minutes
+    const cacheCleanInterval = setInterval(() => {
+      cleanOldCache();
+    }, 10 * 60 * 1000);
+
+    return () => {
+      clearInterval(cacheCleanInterval);
+      if (searchAbortControllerRef.current) {
+        searchAbortControllerRef.current.abort();
+      }
+    };
   }, []);
+
+  // ==================== FONCTIONS UTILITAIRES ====================
+
+  // Nettoyage automatique du cache ancien (>30 minutes)
+  const cleanOldCache = useCallback(() => {
+    const now = Date.now();
+    const maxAge = 30 * 60 * 1000; // 30 minutes
+
+    setCache(prev => {
+      const newSearches = new Map();
+      
+      for (const [key, value] of prev.articlesSearches) {
+        if (now - value.timestamp < maxAge) {
+          newSearches.set(key, value);
+        }
+      }
+      
+      if (newSearches.size !== prev.articlesSearches.size) {
+        console.log(`🧹 Cache nettoyé: ${prev.articlesSearches.size - newSearches.size} entrées supprimées`);
+      }
+      
+      return {
+        ...prev,
+        articlesSearches: newSearches
+      };
+    });
+  }, []);
+
+  const clearCache = useCallback(() => {
+    setCache({
+      articlesSearches: new Map(),
+      lastSearch: '',
+      lastFamily: ''
+    });
+    console.log('🗑️ Cache vidé');
+  }, []);
+
+  // Statistiques du cache pour debugging
+  const getCacheStats = useCallback(() => {
+    return {
+      size: cache.articlesSearches.size,
+      entries: Array.from(cache.articlesSearches.keys()),
+      oldestEntry: cache.articlesSearches.size > 0 
+        ? Math.min(...Array.from(cache.articlesSearches.values()).map(v => v.timestamp))
+        : null,
+      newestEntry: cache.articlesSearches.size > 0 
+        ? Math.max(...Array.from(cache.articlesSearches.values()).map(v => v.timestamp))
+        : null
+    };
+  }, [cache.articlesSearches]);
+
+  // ==================== CHARGEMENT INITIAL ====================
 
   const loadInitialData = async () => {
     console.log('🚀 Chargement initial des données...');
@@ -72,7 +143,8 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  // Test de connexion
+  // ==================== GESTION DE LA CONNEXION ====================
+
   const testConnection = async () => {
     setConnectionStatus('testing');
     
@@ -92,6 +164,12 @@ export const DataProvider = ({ children }) => {
       setErrors(prev => ({ ...prev, connection: 'Impossible de se connecter au serveur' }));
     }
   };
+
+  const refreshConnection = useCallback(async () => {
+    await testConnection();
+  }, []);
+
+  // ==================== CHARGEMENT DES DONNÉES ====================
 
   // Charger les familles
   const loadFamilies = async () => {
@@ -119,12 +197,12 @@ export const DataProvider = ({ children }) => {
 
   // Charger les médicaments
   const loadMedicaments = async (forceReload = false) => {
-    if (medicaments.length > 0 && !forceReload) return medicaments; // Déjà chargé
+    if (medicaments.length > 0 && !forceReload) return medicaments;
     
     setLoading(prev => ({ ...prev, medicaments: true }));
     
     try {
-      const result = await medicamentService.getMedicaments({ per_page: 1000 }); // Charger tout
+      const result = await medicamentService.getMedicaments({ per_page: 1000 });
       
       if (result.success) {
         setMedicaments(result.data.medicaments);
@@ -143,12 +221,12 @@ export const DataProvider = ({ children }) => {
 
   // Charger les médecins
   const loadMedecins = async (forceReload = false) => {
-    if (medecins.length > 0 && !forceReload) return medecins; // Déjà chargé
+    if (medecins.length > 0 && !forceReload) return medecins;
     
     setLoading(prev => ({ ...prev, medecins: true }));
     
     try {
-      const result = await medecinService.getMedecins({ per_page: 1000 }); // Charger tout
+      const result = await medecinService.getMedecins({ per_page: 1000 });
       
       if (result.success) {
         setMedecins(result.data.medecins);
@@ -165,69 +243,117 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  // Rechercher des articles avec cache intelligent
-  const searchArticles = async (searchTerm = '', selectedFamily = '', page = 1, limit = 50) => {
-    // Créer une clé de cache
-    const cacheKey = `${searchTerm.trim()}-${selectedFamily}-${page}-${limit}`;
+  // ==================== RECHERCHE D'ARTICLES OPTIMISÉE ====================
+
+  const searchArticles = useCallback(async (searchTerm = '', selectedFamily = '', page = 1, limit = 100) => {
+    const trimmedTerm = searchTerm.trim();
     
-    // Vérifier le cache d'abord
+    // Créer une clé de cache
+    const cacheKey = `${trimmedTerm.toLowerCase()}-${selectedFamily}-${page}-${limit}`;
+    
+    // Annuler la recherche précédente si elle existe
+    if (searchAbortControllerRef.current) {
+      searchAbortControllerRef.current.abort();
+    }
+    
+    // Vérifier le cache d'abord pour des résultats instantanés
     if (cache.articlesSearches.has(cacheKey)) {
-      console.log('📦 Utilisation du cache pour:', cacheKey);
-      return cache.articlesSearches.get(cacheKey);
+      const cachedResult = cache.articlesSearches.get(cacheKey);
+      console.log('⚡ Résultat instantané du cache DataContext:', cacheKey);
+      return cachedResult;
     }
 
     if (connectionStatus !== 'ok') {
       throw new Error('Connexion non établie');
     }
 
+    // Éviter les doublons de recherche
+    if (lastSearchRef.current === cacheKey) {
+      return { articles: [], pagination: {} };
+    }
+    lastSearchRef.current = cacheKey;
+
     setLoading(prev => ({ ...prev, articles: true }));
+    
+    // Créer un nouveau AbortController pour cette recherche
+    const abortController = new AbortController();
+    searchAbortControllerRef.current = abortController;
     
     try {
       const result = await directAccessService.searchArticles({
-        search: searchTerm.trim(),
+        search: trimmedTerm,
         family: selectedFamily,
         page,
         limit
       });
 
+      // Vérifier si la recherche n'a pas été annulée
+      if (abortController.signal.aborted) {
+        return { articles: [], pagination: {} };
+      }
+
       if (result.success) {
         const searchResult = {
-          articles: result.data.articles,
-          pagination: result.data.pagination,
+          articles: result.data.articles || [],
+          pagination: result.data.pagination || {},
           timestamp: Date.now()
         };
 
-        // Mettre en cache (limiter à 50 entrées max)
-        const newCache = new Map(cache.articlesSearches);
-        if (newCache.size >= 50) {
-          const firstKey = newCache.keys().next().value;
-          newCache.delete(firstKey);
-        }
-        newCache.set(cacheKey, searchResult);
+        // Mise en cache optimisée avec limitation intelligente
+        setCache(prev => {
+          const newSearches = new Map(prev.articlesSearches);
+          
+          // Limiter à 100 entrées avec suppression des plus anciennes
+          if (newSearches.size >= 100) {
+            // Supprimer les 20 entrées les plus anciennes
+            const entries = Array.from(newSearches.entries())
+              .sort((a, b) => a[1].timestamp - b[1].timestamp);
+            
+            for (let i = 0; i < 20; i++) {
+              newSearches.delete(entries[i][0]);
+            }
+          }
+          
+          newSearches.set(cacheKey, searchResult);
+          
+          return {
+            ...prev,
+            articlesSearches: newSearches
+          };
+        });
         
-        setCache(prev => ({ ...prev, articlesSearches: newCache }));
         setErrors(prev => ({ ...prev, articles: null }));
+        console.log('💾 Mise en cache DataContext:', cacheKey, `(${result.data.articles?.length || 0} résultats)`);
         
-        console.log('💾 Mise en cache:', cacheKey);
         return searchResult;
       } else {
         throw new Error(result.message);
       }
     } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('🚫 Recherche annulée:', cacheKey);
+        return { articles: [], pagination: {} };
+      }
+      
       setErrors(prev => ({ ...prev, articles: error.message }));
       throw error;
     } finally {
       setLoading(prev => ({ ...prev, articles: false }));
+      // Nettoyer la référence
+      if (searchAbortControllerRef.current === abortController) {
+        searchAbortControllerRef.current = null;
+      }
+      lastSearchRef.current = '';
     }
-  };
+  }, [connectionStatus, cache.articlesSearches]);
 
-  // CRUD MÉDICAMENTS avec mise à jour du cache
+  // ==================== CRUD MÉDICAMENTS ====================
+
   const addMedicament = async (medicamentData) => {
     try {
       const result = await medicamentService.createMedicament(medicamentData);
       
       if (result.success) {
-        // Mettre à jour le cache local
         const newMedicament = {
           id: result.data.id || Date.now(),
           nom: medicamentData.nom,
@@ -256,7 +382,6 @@ export const DataProvider = ({ children }) => {
       const result = await medicamentService.updateMedicament(id, medicamentData);
       
       if (result.success) {
-        // Mettre à jour le cache local
         setMedicaments(prev => prev.map(med => 
           med.id === id 
             ? { ...med, nom: medicamentData.nom, famille: medicamentData.famille }
@@ -283,7 +408,6 @@ export const DataProvider = ({ children }) => {
       const result = await medicamentService.deleteMedicament(id);
       
       if (result.success) {
-        // Mettre à jour le cache local
         setMedicaments(prev => prev.filter(med => med.id !== id));
         return result;
       } else {
@@ -295,7 +419,8 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  // CRUD MÉDECINS avec mise à jour du cache
+  // ==================== CRUD MÉDECINS ====================
+
   const addMedecin = async (medecinData) => {
     try {
       const result = await medecinService.createMedecin(medecinData);
@@ -351,34 +476,28 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  // Fonctions utilitaires
-  const clearCache = () => {
-    setCache({
-      articlesSearches: new Map(),
-      lastSearch: '',
-      lastFamily: ''
-    });
-    console.log('🗑️ Cache vidé');
-  };
+  // ==================== FONCTIONS DE RAFRAÎCHISSEMENT ====================
 
-  const refreshConnection = async () => {
-    await testConnection();
-  };
-
-  const refreshAllData = async () => {
+  const refreshAllData = useCallback(async () => {
     setLoading(prev => ({ ...prev, initial: true }));
     clearCache();
     
+    // Annuler les recherches en cours
+    if (searchAbortControllerRef.current) {
+      searchAbortControllerRef.current.abort();
+    }
+    
     await Promise.allSettled([
       loadFamilies(),
-      loadMedicaments(true), // Force reload
-      loadMedecins(true)      // Force reload
+      loadMedicaments(true),
+      loadMedecins(true)
     ]);
     
     setLoading(prev => ({ ...prev, initial: false }));
-  };
+  }, [clearCache]);
 
-  // Valeur du contexte
+  // ==================== VALEUR DU CONTEXTE ====================
+
   const contextValue = {
     // Données
     articles,
@@ -392,7 +511,7 @@ export const DataProvider = ({ children }) => {
     connectionStatus,
     connectionInfo,
     
-    // Fonctions de recherche
+    // Fonction de recherche optimisée
     searchArticles,
     
     // Fonctions CRUD médicaments
@@ -413,8 +532,9 @@ export const DataProvider = ({ children }) => {
     clearCache,
     refreshAllData,
     
-    // Cache info
-    cacheSize: cache.articlesSearches.size
+    // Informations sur le cache
+    cacheSize: cache.articlesSearches.size,
+    getCacheStats
   };
 
   return (

@@ -85,7 +85,6 @@ const ModalDetailsHistorique = ({ selectedOrdonnance, onClose, onPrint, onDownlo
                 <div className="space-y-2 text-sm">
                   <p><strong>N° ordonnance:</strong> {selectedOrdonnance.numero_ordonnance}</p>
                   <p><strong>Date:</strong> {new Date(selectedOrdonnance.date).toLocaleDateString('fr-FR')}</p>
-                  <p><strong>Dossier:</strong> {selectedOrdonnance.dossier || 'Non spécifié'}</p>
                 </div>
               </div>
             </div>
@@ -585,9 +584,6 @@ const Historique = () => {
         <div></div>
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 font-serif">Historique des Ordonnances</h2>
-          {currentDossier && (
-            <p className="text-sm text-gray-500 mt-1">Dossier: {currentDossier}</p>
-          )}
         </div>
         <div className="flex space-x-2">
           <button
@@ -700,31 +696,16 @@ const Historique = () => {
           <div className="text-center py-12">
             <Filter className="w-16 h-16 text-gray-300 mb-4 mx-auto" />
             <p className="text-gray-500">Sélectionnez un médicament et/ou une date pour voir l'historique des ordonnances</p>
-            {currentDossier && (
-              <p className="text-xs text-gray-400 mt-2">
-                Recherche dans le dossier: {currentDossier}
-              </p>
-            )}
           </div>
         ) : loading ? (
           <div className="text-center py-12">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-gray-600">Chargement de l'historique...</p>
-            {currentDossier && (
-              <p className="text-xs text-gray-500 mt-2">
-                Dossier: {currentDossier}
-              </p>
-            )}
           </div>
         ) : ordonnances.length === 0 ? (
           <div className="text-center py-12">
             <FileText className="w-16 h-16 text-gray-300 mb-4 mx-auto" />
             <p className="text-gray-500">Aucune ordonnance trouvée avec ces critères</p>
-            {currentDossier && (
-              <p className="text-xs text-gray-400 mt-2">
-                dans le dossier: {currentDossier}
-              </p>
-            )}
           </div>
         ) : (
           <>

@@ -492,27 +492,13 @@ const Ordonnances = () => {
       loadOrdonnances();
       loadAllClients();
       
-      // Vérifier le statut de l'imprimante - NOUVEAU
-      checkPrinterStatus();
     };
     
     debugAndLoad();
   }, [currentPage, searchTerm]);
 
   // NOUVELLE FONCTION : Vérifier le statut de l'imprimante
-  const checkPrinterStatus = async () => {
-    try {
-      const status = await ordonnanceService.checkPrinterAvailability();
-      setPrinterStatus(status);
-    } catch (error) {
-      console.error('Erreur vérification imprimante:', error);
-      setPrinterStatus({
-        available: false,
-        method: null,
-        message: 'Erreur de vérification'
-      });
-    }
-  };
+  
 
   // Charger les ordonnances
   const loadOrdonnances = async () => {
