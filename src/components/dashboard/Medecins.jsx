@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useData } from '../../contexts/DataContext';
 
 const Medecins = () => {
@@ -15,23 +15,38 @@ const Medecins = () => {
 
   const perPage = 8;
 
-  // Utiliser le cache global - plus de chargement nécessaire !
+  // ✅ CORRIGÉ: Utiliser le DataContext optimisé avec chargement lazy
   const {
     medecins,
     loading,
     addMedecin,
     updateMedecin,
-    deleteMedecin
+    deleteMedecin,
+    loadMedecinsLazy,        // ✅ NOUVEAU: Fonction de chargement lazy
+    loadFullMedecins         // ✅ NOUVEAU: Fonction de chargement complet si besoin
   } = useData();
+
+  // ✅ NOUVEAU: Chargement automatique des médecins si pas encore chargés
+  useEffect(() => {
+    if (medecins.length === 0 && !loading.medecins) {
+      // Chargement lazy par défaut (30 médecins)
+      loadMedecinsLazy(30);
+    }
+  }, [medecins.length, loading.medecins, loadMedecinsLazy]);
+
+  // ✅ NOUVEAU: Fonction pour charger plus de médecins si nécessaire
+  const handleLoadMore = () => {
+    loadFullMedecins(); // Charge tous les médecins (1000)
+  };
 
   // Filtrage côté client (ultra-rapide)
   const filteredMedecins = useMemo(() => {
     return medecins.filter(medecin => {
       return !search.trim() || 
-        medecin.nom_complet.toLowerCase().includes(search.toLowerCase()) ||
-        medecin.adresse.toLowerCase().includes(search.toLowerCase()) ||
-        medecin.ONM.toLowerCase().includes(search.toLowerCase()) ||
-        medecin.telephone.toLowerCase().includes(search.toLowerCase());
+        medecin.nom_complet?.toLowerCase().includes(search.toLowerCase()) ||
+        medecin.adresse?.toLowerCase().includes(search.toLowerCase()) ||
+        medecin.ONM?.toLowerCase().includes(search.toLowerCase()) ||
+        medecin.telephone?.toLowerCase().includes(search.toLowerCase());
     });
   }, [medecins, search]);
 
@@ -65,10 +80,10 @@ const Medecins = () => {
 
   const handleEdit = (medecin) => {
     setFormData({
-      nom_complet: medecin.nom_complet,
-      adresse: medecin.adresse,
-      ONM: medecin.ONM,
-      telephone: medecin.telephone
+      nom_complet: medecin.nom_complet || '',
+      adresse: medecin.adresse || '',
+      ONM: medecin.ONM || '',
+      telephone: medecin.telephone || ''
     });
     setEditingId(medecin.id);
     setShowForm(true);
@@ -137,9 +152,21 @@ const Medecins = () => {
         </div>
       </div>
 
+      {/* ✅ NOUVEAU: Bouton pour charger plus de médecins si nécessaire */}
+      {medecins.length > 0 && medecins.length % 30 === 0 && !loading.medecins && (
+        <div className="text-center">
+          <button
+            onClick={handleLoadMore}
+            className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md transition-colors text-sm"
+          >
+            Charger tous les médecins ({medecins.length} actuellement)
+          </button>
+        </div>
+      )}
+
       {/* Carte des médecins */}
       <div className={`${showForm ? 'blur-sm opacity-60 pointer-events-none' : ''}`}>
-        {loading.initial ? (
+        {loading.medecins ? (
           <div className="text-center py-12">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-gray-600">Chargement des médecins...</p>
@@ -153,17 +180,17 @@ const Medecins = () => {
                     <div className="flex items-center">
                       <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
                         <span className="text-white font-medium">
-                          {medecin.nom_complet.split(' ')[1]?.charAt(0) || 'M'}
+                          {medecin.nom_complet?.split(' ')[1]?.charAt(0) || medecin.nom_complet?.charAt(0) || 'M'}
                         </span>
                       </div>
                       <div className="ml-3">
-                        <h3 className="text-lg font-medium text-gray-900">Dr {medecin.nom_complet}</h3>
-                        <p className="text-sm text-gray-500">Adresse: {medecin.adresse}</p>
+                        <h3 className="text-lg font-medium text-gray-900">Dr {medecin.nom_complet || 'Nom non renseigné'}</h3>
+                        <p className="text-sm text-gray-500">Adresse: {medecin.adresse || 'Non renseignée'}</p>
                       </div>
                     </div>
                     <div className="mt-3 space-y-1 text-sm text-gray-600">
-                      <p>📞 {medecin.telephone}</p>
-                      <p>ONM: {medecin.ONM}</p>
+                      <p>📞 {medecin.telephone || 'Non renseigné'}</p>
+                      <p>ONM: {medecin.ONM || 'Non renseigné'}</p>
                     </div>
                     <div className="mt-3 flex space-x-2 text-sm">
                       <button
@@ -184,11 +211,19 @@ const Medecins = () => {
               ))}
             </div>
             
-            {filteredMedecins.length === 0 && (
+            {filteredMedecins.length === 0 && !loading.medecins && (
               <div className="text-center py-12">
                 <p className="text-gray-500">
                   {search ? 'Aucun médecin trouvé avec ces critères' : 'Aucun médecin enregistré'}
                 </p>
+                {medecins.length === 0 && (
+                  <button
+                    onClick={() => loadFullMedecins()}
+                    className="mt-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md transition-colors"
+                  >
+                    Recharger les médecins
+                  </button>
+                )}
               </div>
             )}
             <br />

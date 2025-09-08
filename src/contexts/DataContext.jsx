@@ -1,4 +1,4 @@
-// contexts/DataContext.js
+// contexts/DataContext.js - VERSION OPTIMISÉE
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import directAccessService from '../services/directAccessService';
 import medicamentService from '../services/medicamentService';
@@ -17,28 +17,21 @@ export const useData = () => {
 export const DataProvider = ({ children }) => {
   // ==================== ÉTATS PRINCIPAUX ====================
   
-  // États pour chaque type de données
   const [articles, setArticles] = useState([]);
   const [families, setFamilies] = useState([]);
   const [medicaments, setMedicaments] = useState([]);
   const [medecins, setMedecins] = useState([]);
   
-  // États de chargement
   const [loading, setLoading] = useState({
     articles: false,
     families: false,
     medicaments: false,
     medecins: false,
-    initial: true
+    initial: false 
   });
 
-  // États d'erreur
   const [errors, setErrors] = useState({});
   
-  // État de connexion
-  const [connectionStatus, setConnectionStatus] = useState('unknown');
-  const [connectionInfo, setConnectionInfo] = useState(null);
-
   // Cache optimisé avec nettoyage automatique
   const [cache, setCache] = useState({
     articlesSearches: new Map(),
@@ -49,12 +42,145 @@ export const DataProvider = ({ children }) => {
   // Références pour éviter les appels multiples simultanés
   const searchAbortControllerRef = useRef(null);
   const lastSearchRef = useRef('');
+  
+  // ✅ NOUVEAU: Flag pour éviter les chargements multiples
+  const isLoadingRef = useRef({
+    families: false,
+    medicaments: false,
+    medecins: false
+  });
 
-  // ==================== EFFECTS ET INITIALISATION ====================
+  // ==================== CHARGEMENT INTELLIGENT POST-SÉLECTION ====================
+
+  // ✅ NOUVEAU: Chargement optimisé après sélection du dossier
+  const loadEssentialDataAfterFolder = useCallback(async () => {
+    console.log('🚀 Chargement essentiel après sélection dossier...');
+    
+    try {
+      // 1. CRITIQUE: Charger seulement les familles (rapide)
+      const families = await loadFamilies();
+      
+      // 2. IMPORTANT: Différer les autres chargements
+      setTimeout(() => {
+        loadMedicamentsLazy(50); // Seulement 50 au lieu de 1000
+      }, 500);
+      
+      setTimeout(() => {
+        loadMedecinsLazy(30); // Seulement 30 au lieu de 1000  
+      }, 1000);
+      
+      console.log('✅ Chargement essentiel terminé');
+      return { success: true, families };
+      
+    } catch (error) {
+      console.error('❌ Erreur chargement essentiel:', error);
+      setErrors(prev => ({ ...prev, essential: error.message }));
+      return { success: false, error: error.message };
+    }
+  }, []);
+
+  // ==================== CHARGEMENT LAZY DES DONNÉES ====================
+
+  // Charger les familles (le plus critique)
+  const loadFamilies = useCallback(async () => {
+    if (families.length > 0) return families; // Déjà chargé
+    if (isLoadingRef.current.families) return []; // Éviter doublons
+    
+    isLoadingRef.current.families = true;
+    setLoading(prev => ({ ...prev, families: true }));
+    
+    try {
+      const result = await directAccessService.getFamilies();
+      
+      if (result.success) {
+        setFamilies(result.data);
+        setErrors(prev => ({ ...prev, families: null }));
+        console.log('✅ Familles chargées:', result.data.length);
+        return result.data;
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      setErrors(prev => ({ ...prev, families: error.message }));
+      return [];
+    } finally {
+      setLoading(prev => ({ ...prev, families: false }));
+      isLoadingRef.current.families = false;
+    }
+  }, [families.length]);
+
+  // ✅ NOUVEAU: Chargement lazy des médicaments (limité)
+  const loadMedicamentsLazy = useCallback(async (limit = 50) => {
+    if (medicaments.length > 0) return medicaments; 
+    if (isLoadingRef.current.medicaments) return []; 
+    
+    isLoadingRef.current.medicaments = true;
+    setLoading(prev => ({ ...prev, medicaments: true }));
+    
+    try {
+      const result = await medicamentService.getMedicaments({ 
+        per_page: limit 
+      });
+      
+      if (result.success) {
+        setMedicaments(result.data.medicaments);
+        setErrors(prev => ({ ...prev, medicaments: null }));
+        console.log('✅ Médicaments chargés (lazy):', result.data.medicaments.length);
+        return result.data.medicaments;
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      setErrors(prev => ({ ...prev, medicaments: error.message }));
+      return [];
+    } finally {
+      setLoading(prev => ({ ...prev, medicaments: false }));
+      isLoadingRef.current.medicaments = false;
+    }
+  }, [medicaments.length]);
+
+  // ✅ NOUVEAU: Chargement lazy des médecins (limité)
+  const loadMedecinsLazy = useCallback(async (limit = 30) => {
+    if (medecins.length > 0) return medecins; 
+    if (isLoadingRef.current.medecins) return [];
+    
+    isLoadingRef.current.medecins = true;
+    setLoading(prev => ({ ...prev, medecins: true }));
+    
+    try {
+      const result = await medecinService.getMedecins({ 
+        per_page: limit
+      });
+      
+      if (result.success) {
+        setMedecins(result.data.medecins);
+        setErrors(prev => ({ ...prev, medecins: null }));
+        console.log('✅ Médecins chargés (lazy):', result.data.medecins.length);
+        return result.data.medecins;
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      setErrors(prev => ({ ...prev, medecins: error.message }));
+      return [];
+    } finally {
+      setLoading(prev => ({ ...prev, medecins: false }));
+      isLoadingRef.current.medecins = false;
+    }
+  }, [medecins.length]);
+
+  // ✅ NOUVEAU: Chargement complet à la demande
+  const loadFullMedicaments = useCallback(async () => {
+    return loadMedicamentsLazy(1000);
+  }, [loadMedicamentsLazy]);
+
+  const loadFullMedecins = useCallback(async () => {
+    return loadMedecinsLazy(1000); 
+  }, [loadMedecinsLazy]);
+
+  // ==================== NETTOYAGE AUTOMATIQUE ====================
 
   useEffect(() => {
-    loadInitialData();
-    
     // Nettoyage du cache toutes les 10 minutes
     const cacheCleanInterval = setInterval(() => {
       cleanOldCache();
@@ -68,12 +194,10 @@ export const DataProvider = ({ children }) => {
     };
   }, []);
 
-  // ==================== FONCTIONS UTILITAIRES ====================
-
   // Nettoyage automatique du cache ancien (>30 minutes)
   const cleanOldCache = useCallback(() => {
     const now = Date.now();
-    const maxAge = 30 * 60 * 1000; // 30 minutes
+    const maxAge = 30 * 60 * 1000; 
 
     setCache(prev => {
       const newSearches = new Map();
@@ -85,7 +209,7 @@ export const DataProvider = ({ children }) => {
       }
       
       if (newSearches.size !== prev.articlesSearches.size) {
-        console.log(`🧹 Cache nettoyé: ${prev.articlesSearches.size - newSearches.size} entrées supprimées`);
+        console.log('🧹 Cache nettoyé:', prev.articlesSearches.size - newSearches.size, 'entrées supprimées');
       }
       
       return {
@@ -103,145 +227,6 @@ export const DataProvider = ({ children }) => {
     });
     console.log('🗑️ Cache vidé');
   }, []);
-
-  // Statistiques du cache pour debugging
-  const getCacheStats = useCallback(() => {
-    return {
-      size: cache.articlesSearches.size,
-      entries: Array.from(cache.articlesSearches.keys()),
-      oldestEntry: cache.articlesSearches.size > 0 
-        ? Math.min(...Array.from(cache.articlesSearches.values()).map(v => v.timestamp))
-        : null,
-      newestEntry: cache.articlesSearches.size > 0 
-        ? Math.max(...Array.from(cache.articlesSearches.values()).map(v => v.timestamp))
-        : null
-    };
-  }, [cache.articlesSearches]);
-
-  // ==================== CHARGEMENT INITIAL ====================
-
-  const loadInitialData = async () => {
-    console.log('🚀 Chargement initial des données...');
-    
-    try {
-      // 1. Tester la connexion d'abord
-      await testConnection();
-      
-      // 2. Charger toutes les données en parallèle
-      await Promise.allSettled([
-        loadFamilies(),
-        loadMedicaments(),
-        loadMedecins()
-      ]);
-      
-      console.log('✅ Chargement initial terminé');
-    } catch (error) {
-      console.error('❌ Erreur chargement initial:', error);
-      setErrors(prev => ({ ...prev, initial: error.message }));
-    } finally {
-      setLoading(prev => ({ ...prev, initial: false }));
-    }
-  };
-
-  // ==================== GESTION DE LA CONNEXION ====================
-
-  const testConnection = async () => {
-    setConnectionStatus('testing');
-    
-    try {
-      const result = await directAccessService.testConnection();
-      
-      if (result.success) {
-        setConnectionStatus('ok');
-        setConnectionInfo(result.data);
-        setErrors(prev => ({ ...prev, connection: null }));
-      } else {
-        setConnectionStatus('error');
-        setErrors(prev => ({ ...prev, connection: result.message }));
-      }
-    } catch (error) {
-      setConnectionStatus('error');
-      setErrors(prev => ({ ...prev, connection: 'Impossible de se connecter au serveur' }));
-    }
-  };
-
-  const refreshConnection = useCallback(async () => {
-    await testConnection();
-  }, []);
-
-  // ==================== CHARGEMENT DES DONNÉES ====================
-
-  // Charger les familles
-  const loadFamilies = async () => {
-    if (families.length > 0) return families; // Déjà chargé
-    
-    setLoading(prev => ({ ...prev, families: true }));
-    
-    try {
-      const result = await directAccessService.getFamilies();
-      
-      if (result.success) {
-        setFamilies(result.data);
-        setErrors(prev => ({ ...prev, families: null }));
-        return result.data;
-      } else {
-        throw new Error(result.message);
-      }
-    } catch (error) {
-      setErrors(prev => ({ ...prev, families: error.message }));
-      return [];
-    } finally {
-      setLoading(prev => ({ ...prev, families: false }));
-    }
-  };
-
-  // Charger les médicaments
-  const loadMedicaments = async (forceReload = false) => {
-    if (medicaments.length > 0 && !forceReload) return medicaments;
-    
-    setLoading(prev => ({ ...prev, medicaments: true }));
-    
-    try {
-      const result = await medicamentService.getMedicaments({ per_page: 1000 });
-      
-      if (result.success) {
-        setMedicaments(result.data.medicaments);
-        setErrors(prev => ({ ...prev, medicaments: null }));
-        return result.data.medicaments;
-      } else {
-        throw new Error(result.message);
-      }
-    } catch (error) {
-      setErrors(prev => ({ ...prev, medicaments: error.message }));
-      return [];
-    } finally {
-      setLoading(prev => ({ ...prev, medicaments: false }));
-    }
-  };
-
-  // Charger les médecins
-  const loadMedecins = async (forceReload = false) => {
-    if (medecins.length > 0 && !forceReload) return medecins;
-    
-    setLoading(prev => ({ ...prev, medecins: true }));
-    
-    try {
-      const result = await medecinService.getMedecins({ per_page: 1000 });
-      
-      if (result.success) {
-        setMedecins(result.data.medecins);
-        setErrors(prev => ({ ...prev, medecins: null }));
-        return result.data.medecins;
-      } else {
-        throw new Error(result.message);
-      }
-    } catch (error) {
-      setErrors(prev => ({ ...prev, medecins: error.message }));
-      return [];
-    } finally {
-      setLoading(prev => ({ ...prev, medecins: false }));
-    }
-  };
 
   // ==================== RECHERCHE D'ARTICLES OPTIMISÉE ====================
 
@@ -261,10 +246,6 @@ export const DataProvider = ({ children }) => {
       const cachedResult = cache.articlesSearches.get(cacheKey);
       console.log('⚡ Résultat instantané du cache DataContext:', cacheKey);
       return cachedResult;
-    }
-
-    if (connectionStatus !== 'ok') {
-      throw new Error('Connexion non établie');
     }
 
     // Éviter les doublons de recherche
@@ -345,10 +326,11 @@ export const DataProvider = ({ children }) => {
       }
       lastSearchRef.current = '';
     }
-  }, [connectionStatus, cache.articlesSearches]);
+  }, [cache.articlesSearches]);
 
-  // ==================== CRUD MÉDICAMENTS ====================
+  // ==================== CRUD OPTIMISÉ ====================
 
+  // CRUD médicaments 
   const addMedicament = async (medicamentData) => {
     try {
       const result = await medicamentService.createMedicament(medicamentData);
@@ -419,8 +401,7 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  // ==================== CRUD MÉDECINS ====================
-
+  // CRUD médecins (identique)
   const addMedecin = async (medecinData) => {
     try {
       const result = await medecinService.createMedecin(medecinData);
@@ -476,10 +457,9 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  // ==================== FONCTIONS DE RAFRAÎCHISSEMENT ====================
+  // ==================== RAFRAÎCHISSEMENT OPTIMISÉ ====================
 
   const refreshAllData = useCallback(async () => {
-    setLoading(prev => ({ ...prev, initial: true }));
     clearCache();
     
     // Annuler les recherches en cours
@@ -487,14 +467,21 @@ export const DataProvider = ({ children }) => {
       searchAbortControllerRef.current.abort();
     }
     
-    await Promise.allSettled([
-      loadFamilies(),
-      loadMedicaments(true),
-      loadMedecins(true)
-    ]);
+    // Reset des flags
+    isLoadingRef.current = {
+      families: false,
+      medicaments: false,
+      medecins: false
+    };
     
-    setLoading(prev => ({ ...prev, initial: false }));
-  }, [clearCache]);
+    // Reset des états
+    setFamilies([]);
+    setMedicaments([]);
+    setMedecins([]);
+    
+    // Recharger seulement l'essentiel
+    await loadEssentialDataAfterFolder();
+  }, [clearCache, loadEssentialDataAfterFolder]);
 
   // ==================== VALEUR DU CONTEXTE ====================
 
@@ -508,8 +495,9 @@ export const DataProvider = ({ children }) => {
     // États
     loading,
     errors,
-    connectionStatus,
-    connectionInfo,
+    
+    // ✅ NOUVEAU: Fonction de chargement intelligent
+    loadEssentialDataAfterFolder,
     
     // Fonction de recherche optimisée
     searchArticles,
@@ -525,16 +513,26 @@ export const DataProvider = ({ children }) => {
     deleteMedecin,
     
     // Fonctions utilitaires
-    testConnection: refreshConnection,
     loadFamilies,
-    loadMedicaments,
-    loadMedecins,
+    loadMedicamentsLazy,
+    loadMedecinsLazy,
+    loadFullMedicaments,
+    loadFullMedecins,   
     clearCache,
     refreshAllData,
     
     // Informations sur le cache
     cacheSize: cache.articlesSearches.size,
-    getCacheStats
+    getCacheStats: () => ({
+      size: cache.articlesSearches.size,
+      entries: Array.from(cache.articlesSearches.keys()),
+      oldestEntry: cache.articlesSearches.size > 0 
+        ? Math.min(...Array.from(cache.articlesSearches.values()).map(v => v.timestamp))
+        : null,
+      newestEntry: cache.articlesSearches.size > 0 
+        ? Math.max(...Array.from(cache.articlesSearches.values()).map(v => v.timestamp))
+        : null
+    })
   };
 
   return (

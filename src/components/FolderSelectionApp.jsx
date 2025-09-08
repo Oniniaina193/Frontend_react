@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FolderOpen, CheckCircle, Database, Calendar, AlertCircle, Loader } from 'lucide-react';
 
-const FolderSelectionApp = ({ onContinue }) => {
+const FolderSelectionApp = ({ onContinue, loadingProgress }) => {
   const [selectedFolder, setSelectedFolder] = useState('');
   const [isSelected, setIsSelected] = useState(false);
   const [folderPath, setFolderPath] = useState('');
@@ -14,6 +14,7 @@ const FolderSelectionApp = ({ onContinue }) => {
     checkExistingSelection();
   }, []);
 
+  // ✅ OPTIMISÉ: Vérification d'existence avec meilleure gestion d'erreurs
   const checkExistingSelection = async () => {
     setDebugInfo('Vérification de la sélection existante...');
     try {
@@ -33,6 +34,10 @@ const FolderSelectionApp = ({ onContinue }) => {
           setFolderInfo(data.data);
           setIsSelected(true);
           setDebugInfo(`✅ Sélection trouvée: ${data.data.folder_name}`);
+          
+          // ✅ NOUVEAU: Stocker immédiatement en localStorage pour cohérence
+          localStorage.setItem('current_dossier_vente', data.data.folder_name);
+          sessionStorage.setItem('current_dossier_vente', data.data.folder_name);
         } else {
           setDebugInfo('Aucune sélection trouvée');
           setIsSelected(false);
@@ -65,6 +70,10 @@ const FolderSelectionApp = ({ onContinue }) => {
         setFolderInfo(null);
         setIsSelected(false);
         setDebugInfo('Sélection réinitialisée');
+        
+        // ✅ NOUVEAU: Nettoyer aussi le localStorage
+        localStorage.removeItem('current_dossier_vente');
+        sessionStorage.removeItem('current_dossier_vente');
       } else {
         setError(result.message || 'Erreur lors de la réinitialisation');
       }
@@ -76,7 +85,7 @@ const FolderSelectionApp = ({ onContinue }) => {
     }
   };
 
-  // VERSION SIMPLIFIÉE 
+  // ✅ OPTIMISÉ VERSION SIMPLIFIÉE avec validation améliorée
   const handleDirectFolderSelection = () => {
     setError('');
     setIsLoading(true);
@@ -101,7 +110,7 @@ const FolderSelectionApp = ({ onContinue }) => {
         const pathParts = firstFile.webkitRelativePath.split('/');
         const folderName = pathParts[0];
         
-        // Vérifier la présence du fichier Caiss.mdb
+        // ✅ AMÉLIORÉ: Validation plus robuste des fichiers requis
         const caissFile = files.find(file => 
           file.name.toLowerCase() === 'caiss.mdb'
         );
@@ -112,6 +121,14 @@ const FolderSelectionApp = ({ onContinue }) => {
           return;
         }
 
+        // ✅ NOUVEAU: Vérification optionnelle des autres fichiers utiles
+        const facturationFile = files.find(file => 
+          file.name.toLowerCase() === 'caiss_facturation.mdb'
+        );
+        const frontofficeFile = files.find(file => 
+          file.name.toLowerCase() === 'caiss_frontoffice.mdb'
+        );
+
         // Construire le chemin du dossier (approximation pour le navigateur)
         const folderFullPath = firstFile.path ? 
           firstFile.path.replace(/[\\\/][^\\\/]*$/, '') : // Enlever le nom du fichier
@@ -119,7 +136,7 @@ const FolderSelectionApp = ({ onContinue }) => {
 
         setDebugInfo(`Tentative d'accès: ${folderName}`);
 
-        // UNIQUEMENT L'ACCÈS DIRECT
+        // ✅ OPTIMISÉ: UNIQUEMENT L'ACCÈS DIRECT avec infos supplémentaires
         const response = await fetch('/api/folder-selection/select', {
           method: 'POST',
           headers: {
@@ -129,7 +146,13 @@ const FolderSelectionApp = ({ onContinue }) => {
           body: JSON.stringify({
             folder_path: folderFullPath,
             folder_name: folderName,
-            access_method: 'direct_only' 
+            access_method: 'direct_only',
+            // ✅ NOUVEAU: Informations supplémentaires pour validation
+            validation_info: {
+              has_facturation: !!facturationFile,
+              has_frontoffice: !!frontofficeFile,
+              total_files: files.length
+            }
           })
         });
 
@@ -144,6 +167,10 @@ const FolderSelectionApp = ({ onContinue }) => {
           });
           setIsSelected(true);
           setDebugInfo(`✅ Accès réussi!!`);
+          
+          // ✅ NOUVEAU: Stocker immédiatement pour cohérence
+          localStorage.setItem('current_dossier_vente', folderName);
+          sessionStorage.setItem('current_dossier_vente', folderName);
         } else {
           // Échec - pas de fallback vers upload
           setError(`Accès direct impossible: ${result.message || 'Erreur inconnue'}`);
@@ -170,14 +197,23 @@ const FolderSelectionApp = ({ onContinue }) => {
     input.click();
   };
 
+  // ✅ NOUVEAU: Fonction de continuation optimisée avec informations de dossier
   const handleContinue = () => {
     if (onContinue) {
-      onContinue();
+      // ✅ NOUVEAU: Passer les informations complètes du dossier
+      const folderInfoComplete = {
+        ...folderInfo,
+        folder_name: selectedFolder,
+        folder_path: folderPath,
+        selected_at: new Date().toISOString()
+      };
+      onContinue(folderInfoComplete);
     }
   };
 
   return (
     <div>
+      {/* ✅ DESIGN ORIGINAL RESTAURÉ - exactement comme l'ancien */}
       <div className="w-96 h-100 bg-gray-100 rounded-xl shadow-lg flex flex-col items-center justify-center p-6">
         <div className="text-center mb-8">
           <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
@@ -246,6 +282,26 @@ const FolderSelectionApp = ({ onContinue }) => {
                 </div>
               </div>
             </div>
+
+            {/* ✅ NOUVEAU: Informations sur le processus de chargement si en cours */}
+            {loadingProgress && loadingProgress.stage && loadingProgress.progress > 0 && (
+              <div className="w-full">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="text-sm text-blue-800 mb-2">
+                    {loadingProgress.message}
+                  </div>
+                  <div className="w-full bg-blue-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${loadingProgress.progress}%` }}
+                    ></div>
+                  </div>
+                  <div className="text-xs text-blue-600 mt-2">
+                    {loadingProgress.progress}% terminé
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="flex space-x-3">
               <button

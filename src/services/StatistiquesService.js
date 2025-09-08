@@ -278,16 +278,16 @@ class StatistiquesService {
         icon: '💊'
       },
       {
-        title: 'Ordonnances du jour',
-        value: data.ordonnances_du_jour?.toLocaleString() || '0',
-        color: 'bg-green-500',
-        icon: '📋'
-      },
-      {
         title: 'Médecins partenaires',
         value: data.medecins_partenaires?.toLocaleString() || '0',
         color: 'bg-purple-500',
         icon: '👨‍⚕️'
+      },
+      {
+        title: 'Ordonnances du jour',
+        value: data.ordonnances_du_jour?.toLocaleString() || '0',
+        color: 'bg-green-500',
+        icon: '📋'
       },
       {
         title: 'Total ordonnances',

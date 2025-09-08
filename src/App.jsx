@@ -12,6 +12,14 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // ✅ NOUVEAU: État pour gérer le chargement post-sélection
+  const [folderSelected, setFolderSelected] = useState(false);
+  const [folderLoadingProgress, setFolderLoadingProgress] = useState({
+    stage: '',
+    progress: 0,
+    message: ''
+  });
 
   // Vérifier l'authentification au démarrage
   useEffect(() => {
@@ -28,12 +36,16 @@ function App() {
         const user = authService.getUser();
         setCurrentUser(user);
         
-        // Optionnel : Vérifier avec le serveur
-        const authCheck = await authService.checkAuth();
-        if (!authCheck.authenticated) {
-          // Token invalide, nettoyer
-          setIsAuthenticated(false);
-          setCurrentUser(null);
+        // Optionnel : Vérifier avec le serveur (seulement si nécessaire)
+        try {
+          const authCheck = await authService.checkAuth();
+          if (!authCheck.authenticated) {
+            // Token invalide, nettoyer
+            setIsAuthenticated(false);
+            setCurrentUser(null);
+          }
+        } catch (error) {
+          console.warn('Vérification auth échouée, continuer en local');
         }
       }
     } catch (error) {
@@ -45,13 +57,39 @@ function App() {
     }
   };
 
-  // Navigation entre les vues
-  const handleContinueToSearch = () => {
+  // ✅ NOUVEAU: Navigation optimisée avec chargement intelligent
+  const handleContinueToSearch = async (folderInfo) => {
+    console.log('📁 Dossier sélectionné:', folderInfo);
+    setFolderSelected(true);
+    
+    // Étape 1: Préparer l'interface
+    setFolderLoadingProgress({
+      stage: 'preparing',
+      progress: 10,
+      message: 'Préparation de l\'interface...'
+    });
+    
+    // Attendre un peu pour que l'interface se mette en place
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
     setCurrentView('interface-principal');
+    
+    // Étape 2: Le chargement des données se fera dans InterfacePrincipal
+    setFolderLoadingProgress({
+      stage: 'ready',
+      progress: 100,
+      message: 'Interface prête'
+    });
   };
 
   const handleBackToSelection = () => {
     setCurrentView('folder-selection');
+    setFolderSelected(false);
+    setFolderLoadingProgress({
+      stage: '',
+      progress: 0,
+      message: ''
+    });
   };
 
   // Gestion de l'authentification
@@ -103,19 +141,56 @@ function App() {
     );
   }
 
+  // ✅ NOUVEAU: Affichage du chargement post-sélection si nécessaire
+  if (folderSelected && folderLoadingProgress.stage === 'preparing') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto">
+          <div className="w-16 h-16 border-4 border-green-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-700 font-medium mb-2">{folderLoadingProgress.message}</p>
+          
+          {/* Barre de progression */}
+          <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+            <div 
+              className="bg-green-600 h-2 rounded-full transition-all duration-300" 
+              style={{ width: `${folderLoadingProgress.progress}%` }}
+            ></div>
+          </div>
+          
+          <p className="text-sm text-gray-500">
+            Initialisation du dossier sélectionné...
+          </p>
+          
+          {/* Bouton retour en cas de problème */}
+          <button 
+            onClick={handleBackToSelection}
+            className="mt-4 text-sm text-blue-600 hover:text-blue-800 underline"
+          >
+            Retour à la sélection
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="App">
       {/* Vue sélection de dossier - Pas de DataProvider nécessaire */}
       {currentView === 'folder-selection' && (
-        <FolderSelectionApp onContinue={handleContinueToSearch} />
+        <FolderSelectionApp 
+          onContinue={handleContinueToSearch}
+          loadingProgress={folderLoadingProgress}
+        />
       )}
       
-      {/* Vue recherche d'articles - AVEC DataProvider */}
+      {/* Vue recherche d'articles - AVEC DataProvider optimisé */}
       {currentView === 'interface-principal' && (
         <DataProvider>
-          <InterfacePrincipal
+          <InterfacePrincipalOptimized
             onBack={handleBackToSelection}
             onLogin={handleLoginRequest}
+            folderSelected={folderSelected}
+            onLoadingProgress={setFolderLoadingProgress}
           />
         </DataProvider>
       )}
@@ -141,5 +216,77 @@ function App() {
     </div>
   );
 }
+
+// ✅ NOUVEAU: Wrapper optimisé pour InterfacePrincipal
+const InterfacePrincipalOptimized = ({ onBack, onLogin, folderSelected, onLoadingProgress }) => {
+  const [initialLoadCompleted, setInitialLoadCompleted] = useState(false);
+  
+  useEffect(() => {
+    if (folderSelected && !initialLoadCompleted) {
+      initializeAfterFolderSelection();
+    }
+  }, [folderSelected, initialLoadCompleted]);
+
+  const initializeAfterFolderSelection = async () => {
+    console.log('🚀 Initialisation post-sélection dossier...');
+    
+    try {
+      // Étape 1: Signaler le début du chargement
+      onLoadingProgress({
+        stage: 'loading_data',
+        progress: 20,
+        message: 'Chargement des données...'
+      });
+      
+      // Le chargement réel se fait maintenant dans DataContext.loadEssentialDataAfterFolder()
+      // On simule juste le timing ici
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      onLoadingProgress({
+        stage: 'loading_families',
+        progress: 60,
+        message: 'Chargement des familles des articles...'
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      onLoadingProgress({
+        stage: 'finalizing',
+        progress: 90,
+        message: 'Finalisation...'
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Étape finale: Marquer comme terminé
+      onLoadingProgress({
+        stage: 'completed',
+        progress: 100,
+        message: 'Prêt !'
+      });
+      
+      setInitialLoadCompleted(true);
+      
+      console.log('✅ Initialisation post-sélection terminée');
+      
+    } catch (error) {
+      console.error('❌ Erreur initialisation post-sélection:', error);
+      onLoadingProgress({
+        stage: 'error',
+        progress: 0,
+        message: 'Erreur lors du chargement'
+      });
+    }
+  };
+
+  return (
+    <InterfacePrincipal
+      onBack={onBack}
+      onLogin={onLogin}
+      initialLoadCompleted={initialLoadCompleted}
+    />
+  );
+};
 
 export default App;

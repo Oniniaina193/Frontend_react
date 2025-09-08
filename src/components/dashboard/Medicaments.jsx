@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Loader, AlertCircle, CheckCircle, X, Edit2, Save, XCircle } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 
@@ -27,21 +27,38 @@ const Medicaments = () => {
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Utiliser le cache global - plus de chargement nécessaire !
+  // ✅ CORRIGÉ: Utiliser le DataContext optimisé avec chargement lazy
   const {
     medicaments,
     families,
     loading,
     addMedicament,
     updateMedicament,
-    deleteMedicament
+    deleteMedicament,
+    loadMedicamentsLazy,     // ✅ NOUVEAU: Fonction de chargement lazy
+    loadFullMedicaments      // ✅ NOUVEAU: Fonction de chargement complet si besoin
   } = useData();
+
+  // ✅ NOUVEAU: Chargement automatique des médicaments si pas encore chargés
+  useEffect(() => {
+    if (medicaments.length === 0 && !loading.medicaments) {
+      // Chargement lazy par défaut (50 médicaments)
+      console.log('🚀 Chargement automatique des médicaments...');
+      loadMedicamentsLazy(50);
+    }
+  }, [medicaments.length, loading.medicaments, loadMedicamentsLazy]);
+
+  // ✅ NOUVEAU: Fonction pour charger plus de médicaments si nécessaire
+  const handleLoadMore = () => {
+    console.log('📦 Chargement complet des médicaments...');
+    loadFullMedicaments(); // Charge tous les médicaments (1000)
+  };
 
   // Filtrage et pagination côté client (ultra-rapide)
   const filteredMedicaments = useMemo(() => {
     return medicaments.filter(med => {
       const matchSearch = !searchTerm.trim() || 
-        med.nom.toLowerCase().includes(searchTerm.toLowerCase());
+        med.nom?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchFamily = !selectedFamily || 
         med.famille === selectedFamily;
       return matchSearch && matchFamily;
@@ -96,8 +113,8 @@ const Medicaments = () => {
   const handleStartEdit = (medicament) => {
     setEditingId(medicament.id);
     setEditingData({
-      nom: medicament.nom,
-      famille: medicament.famille
+      nom: medicament.nom || '',
+      famille: medicament.famille || ''
     });
   };
 
@@ -214,6 +231,21 @@ const Medicaments = () => {
         </div>
       )}
 
+      {/* ✅ NOUVEAU: Bouton pour charger plus de médicaments si nécessaire */}
+      {medicaments.length > 0 && medicaments.length % 50 === 0 && !loading.medicaments && (
+        <div className="text-center bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <p className="text-sm text-blue-700 mb-2">
+            {medicaments.length} médicaments chargés. Il pourrait y en avoir plus.
+          </p>
+          <button
+            onClick={handleLoadMore}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md transition-colors text-sm"
+          >
+            Charger tous les médicaments
+          </button>
+        </div>
+      )}
+
       {/* Formulaire d'ajout */}
       <div className="flex items-end gap-4">
         <div className="flex-1">
@@ -275,10 +307,10 @@ const Medicaments = () => {
 
       {/* Tableau des médicaments */}
       <div className="bg-white shadow rounded-lg border border-black overflow-hidden">
-        {loading.initial ? (
+        {loading.medicaments ? (
           <div className="flex items-center justify-center py-8">
             <Loader className="w-6 h-6 animate-spin text-blue-600 mr-2" />
-            <span className="text-gray-600">Chargement initial...</span>
+            <span className="text-gray-600">Chargement des médicaments...</span>
           </div>
         ) : (
           <>
@@ -308,7 +340,7 @@ const Medicaments = () => {
                           className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
                       ) : (
-                        <span className="font-medium text-gray-900">{med.nom}</span>
+                        <span className="font-medium text-gray-900">{med.nom || 'Nom non renseigné'}</span>
                       )}
                     </td>
                     <td className="px-2 py-1 text-sm border border-black text-center">
@@ -322,7 +354,7 @@ const Medicaments = () => {
                         />
                       ) : (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {med.famille}
+                          {med.famille || 'Non renseigné'}
                         </span>
                       )}
                     </td>
@@ -375,11 +407,19 @@ const Medicaments = () => {
               ))}
             </datalist>
             
-            {filteredMedicaments.length === 0 && (
+            {filteredMedicaments.length === 0 && !loading.medicaments && (
               <div className="text-center py-8 border-t border-black">
                 <p className="text-gray-500">
                   {searchTerm || selectedFamily ? 'Aucun médicament trouvé avec ces critères' : 'Aucun médicament enregistré'}
                 </p>
+                {medicaments.length === 0 && (
+                  <button
+                    onClick={() => loadFullMedicaments()}
+                    className="mt-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md transition-colors"
+                  >
+                    Recharger les médicaments
+                  </button>
+                )}
               </div>
             )}
           </>

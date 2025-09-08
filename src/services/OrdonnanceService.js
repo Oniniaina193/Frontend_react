@@ -1,4 +1,4 @@
-// services/OrdonnanceService.js (version avec événements)
+// services/OrdonnanceService.js - VERSION COMPLÈTE OPTIMISÉE
 import eventBus, { EVENTS } from '../utils/EventBus';
 
 const getApiUrl = () => {
@@ -25,6 +25,13 @@ class OrdonnanceService {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     };
+    
+    // Cache du dossier actuel pour éviter les re-sync
+    this.currentDossierCache = {
+      dossier: null,
+      timestamp: 0,
+      maxAge: 5 * 60 * 1000 // 5 minutes de cache
+    };
   }
 
   getToken() {
@@ -43,12 +50,13 @@ class OrdonnanceService {
   async debugCurrentDossier() {
     const sessionDossier = sessionStorage.getItem('current_dossier_vente');
     const localDossier = localStorage.getItem('current_dossier_vente');
-    const defaultDossier = 'default';
+    const cachedDossier = this.getCachedCurrentDossier();
     
     console.log('=== DEBUG DOSSIER ===');
     console.log('sessionStorage dossier:', sessionDossier);
     console.log('localStorage dossier:', localDossier);
-    console.log('Dossier utilisé:', this.getCurrentDossier());
+    console.log('Cache dossier:', this.currentDossierCache.dossier);
+    console.log('Dossier utilisé:', cachedDossier);
     
     // Vérifier côté serveur
     try {
@@ -61,23 +69,34 @@ class OrdonnanceService {
       console.error('Erreur récupération dossier serveur:', error);
     }
     
-    return this.getCurrentDossier();
+    return cachedDossier;
   }
 
-  // Récupérer le dossier actuel
+  // Récupération du dossier avec cache
   getCurrentDossier() {
     const sessionDossier = sessionStorage.getItem('current_dossier_vente');
     const localDossier = localStorage.getItem('current_dossier_vente');
     
     if (sessionDossier) {
-      console.log('🗂️ Dossier trouvé (session):', sessionDossier);
+      // Mettre à jour le cache
+      this.currentDossierCache = {
+        dossier: sessionDossier,
+        timestamp: Date.now(),
+        maxAge: this.currentDossierCache.maxAge
+      };
       return sessionDossier;
     }
     
     if (localDossier) {
-      console.log('🗂️ Dossier trouvé (local):', localDossier);
       // Copier en session pour cohérence
       sessionStorage.setItem('current_dossier_vente', localDossier);
+      
+      // Mettre à jour le cache
+      this.currentDossierCache = {
+        dossier: localDossier,
+        timestamp: Date.now(),
+        maxAge: this.currentDossierCache.maxAge
+      };
       return localDossier;
     }
     
@@ -85,11 +104,25 @@ class OrdonnanceService {
     return 'default';
   }
 
+  // Récupération du dossier depuis le cache
+  getCachedCurrentDossier() {
+    const now = Date.now();
+    
+    // Si le cache est valide, utiliser le cache
+    if (this.currentDossierCache.dossier && 
+        (now - this.currentDossierCache.timestamp) < this.currentDossierCache.maxAge) {
+      return this.currentDossierCache.dossier;
+    }
+    
+    // Sinon, récupérer et mettre en cache
+    return this.getCurrentDossier();
+  }
+
   // Ajouter le dossier aux paramètres
   addDossierToParams(params = {}) {
     return {
       ...params,
-      current_dossier_vente: this.getCurrentDossier()
+      current_dossier_vente: this.getCachedCurrentDossier()
     };
   }
 
@@ -105,6 +138,14 @@ class OrdonnanceService {
         // Synchroniser le dossier avec le storage local
         sessionStorage.setItem('current_dossier_vente', data.data.folder_name);
         localStorage.setItem('current_dossier_vente', data.data.folder_name);
+        
+        // Mettre à jour le cache
+        this.currentDossierCache = {
+          dossier: data.data.folder_name,
+          timestamp: Date.now(),
+          maxAge: this.currentDossierCache.maxAge
+        };
+        
         console.log('🔄 Dossier synchronisé:', data.data.folder_name);
         return data.data.folder_name;
       }
@@ -112,15 +153,54 @@ class OrdonnanceService {
       console.error('Erreur sync dossier:', error);
     }
     
-    return this.getCurrentDossier();
+    return this.getCachedCurrentDossier();
+  }
+
+  // Synchronisation intelligente (seulement si nécessaire)
+  async syncCurrentDossierSmart() {
+    try {
+      const cachedDossier = this.getCachedCurrentDossier();
+      
+      // Si on a un dossier en cache récent, l'utiliser
+      if (cachedDossier !== 'default') {
+        return cachedDossier;
+      }
+      
+      // Sinon, synchroniser avec le serveur (cas rare)
+      return await this.syncCurrentDossier();
+    } catch (error) {
+      console.error('Erreur sync dossier smart:', error);
+      return this.getCachedCurrentDossier();
+    }
+  }
+
+  // Invalider le cache du dossier (quand on change de dossier)
+  invalidateDossierCache() {
+    this.currentDossierCache = {
+      dossier: null,
+      timestamp: 0,
+      maxAge: this.currentDossierCache.maxAge
+    };
+    console.log('🗑️ Cache dossier invalidé');
+  }
+
+  // Debug du cache
+  debugCacheStatus() {
+    console.log('=== DEBUG CACHE DOSSIER ===');
+    console.log('Dossier en cache:', this.currentDossierCache.dossier);
+    console.log('Timestamp cache:', new Date(this.currentDossierCache.timestamp));
+    console.log('Age du cache (ms):', Date.now() - this.currentDossierCache.timestamp);
+    console.log('Cache valide:', (Date.now() - this.currentDossierCache.timestamp) < this.currentDossierCache.maxAge);
+    console.log('SessionStorage:', sessionStorage.getItem('current_dossier_vente'));
+    console.log('LocalStorage:', localStorage.getItem('current_dossier_vente'));
   }
 
   // ORDONNANCES - CRUD Operations
   async getOrdonnances(params = {}) {
     try {
-      // Synchroniser d'abord le dossier
-      const currentDossier = await this.syncCurrentDossier();
-      console.log('📁 Chargement ordonnances pour dossier:', currentDossier);
+      // Utiliser le cache au lieu de re-sync à chaque fois
+      const currentDossier = this.getCachedCurrentDossier();
+      console.log('📁 Chargement ordonnances pour dossier (cache):', currentDossier);
       
       const paramsWithDossier = {
         ...params,
@@ -136,7 +216,6 @@ class OrdonnanceService {
       if (paramsWithDossier.date_debut) queryParams.append('date_debut', paramsWithDossier.date_debut);
       if (paramsWithDossier.date_fin) queryParams.append('date_fin', paramsWithDossier.date_fin);
       
-      // Le dossier est requis
       queryParams.append('current_dossier_vente', currentDossier);
 
       const url = `${this.baseURL}${queryParams.toString() ? `?${queryParams}` : ''}`;
@@ -164,7 +243,7 @@ class OrdonnanceService {
     try {
       const dataWithDossier = {
         ...ordonnanceData,
-        current_dossier_vente: this.getCurrentDossier()
+        current_dossier_vente: this.getCachedCurrentDossier()
       };
       
       const response = await fetch(this.baseURL, {
@@ -179,7 +258,7 @@ class OrdonnanceService {
         throw new Error(data.message || 'Erreur lors de la création de l\'ordonnance');
       }
       
-      // 🔥 ÉMETTRE L'ÉVÉNEMENT DE CRÉATION
+      // Émettre l'événement de création
       eventBus.emit(EVENTS.ORDONNANCE_CREATED, data.data);
       console.log('📡 Événement ORDONNANCE_CREATED émis:', data.data);
       
@@ -194,7 +273,7 @@ class OrdonnanceService {
     try {
       const dataWithDossier = {
         ...ordonnanceData,
-        current_dossier_vente: this.getCurrentDossier()
+        current_dossier_vente: this.getCachedCurrentDossier()
       };
       
       const response = await fetch(`${this.baseURL}/${id}`, {
@@ -209,7 +288,7 @@ class OrdonnanceService {
         throw new Error(data.message || 'Erreur lors de la modification de l\'ordonnance');
       }
       
-      // 🔥 ÉMETTRE L'ÉVÉNEMENT DE MISE À JOUR
+      // Émettre l'événement de mise à jour
       eventBus.emit(EVENTS.ORDONNANCE_UPDATED, { id, data: data.data });
       console.log('📡 Événement ORDONNANCE_UPDATED émis:', { id, data: data.data });
       
@@ -233,7 +312,7 @@ class OrdonnanceService {
         throw new Error(data.message || 'Erreur lors de la suppression de l\'ordonnance');
       }
       
-      // 🔥 ÉMETTRE L'ÉVÉNEMENT DE SUPPRESSION
+      // Émettre l'événement de suppression
       eventBus.emit(EVENTS.ORDONNANCE_DELETED, { id, deletedData: data });
       console.log('📡 Événement ORDONNANCE_DELETED émis pour ID:', id);
       
@@ -264,10 +343,10 @@ class OrdonnanceService {
     }
   }
 
-  // NOUVELLE MÉTHODE : Vérifier si le dossier est bien configuré
+  // Vérifier si le dossier est bien configuré
   async verifyDossierConfiguration() {
     try {
-      const currentDossier = await this.syncCurrentDossier();
+      const currentDossier = this.getCachedCurrentDossier();
       
       // Test de requête simple
       const response = await fetch(`${this.baseURL}?current_dossier_vente=${encodeURIComponent(currentDossier)}&per_page=1`, {
@@ -287,14 +366,14 @@ class OrdonnanceService {
     } catch (error) {
       return {
         success: false,
-        dossier: this.getCurrentDossier(),
+        dossier: this.getCachedCurrentDossier(),
         message: error.message,
         data: null
       };
     }
   }
 
-  // 🆕 NOUVELLE MÉTHODE: Demander un refresh des statistiques
+  // Demander un refresh des statistiques
   requestStatsRefresh() {
     eventBus.emit(EVENTS.STATS_REFRESH_NEEDED, { source: 'OrdonnanceService' });
     console.log('📡 Refresh des statistiques demandé depuis OrdonnanceService');
@@ -324,7 +403,7 @@ class OrdonnanceService {
   // Suggestion de numéro d'ordonnance
   async suggestNumeroOrdonnance() {
     try {
-      const currentDossier = this.getCurrentDossier();
+      const currentDossier = this.getCachedCurrentDossier();
       const url = `${this.baseURL}/suggest-numero?current_dossier_vente=${encodeURIComponent(currentDossier)}`;
       
       const response = await fetch(url, {
@@ -358,7 +437,7 @@ class OrdonnanceService {
   // Médicaments avec ordonnances
   async getMedicamentsAvecOrdonnances() {
     try {
-      const currentDossier = this.getCurrentDossier();
+      const currentDossier = this.getCachedCurrentDossier();
       const url = `${this.baseURL}/historique/medicaments?current_dossier_vente=${encodeURIComponent(currentDossier)}`;
       
       const response = await fetch(url, {
@@ -416,7 +495,7 @@ class OrdonnanceService {
   // Statistiques du dossier
   async getStatistiquesDossier() {
     try {
-      const currentDossier = this.getCurrentDossier();
+      const currentDossier = this.getCachedCurrentDossier();
       const url = `${this.baseURL}/statistiques?current_dossier_vente=${encodeURIComponent(currentDossier)}`;
       
       const response = await fetch(url, {
@@ -595,6 +674,8 @@ class OrdonnanceService {
     return errors;
   }
 
+  // IMPRESSION ET EXPORT
+  
   /**
    * Impression HTML de l'ordonnance
    */
@@ -788,219 +869,214 @@ class OrdonnanceService {
     }
   }
 
-
-  // Ajoutez ces méthodes à votre classe OrdonnanceService
-
-/**
- * Exporter la liste des ordonnances en PDF
- */
-async exportHistoriqueList(params = {}) {
-  try {
-    console.log('📄 Export PDF de la liste d\'ordonnances avec params:', params);
-    
-    const currentDossier = this.getCurrentDossier();
-    const exportParams = {
-      ...params,
-      current_dossier_vente: currentDossier,
-      format: 'pdf'
-    };
-    
-    const queryParams = new URLSearchParams();
-    if (exportParams.medicament) queryParams.append('medicament', exportParams.medicament);
-    if (exportParams.date) queryParams.append('date', exportParams.date);
-    if (exportParams.titre) queryParams.append('titre', exportParams.titre);
-    queryParams.append('current_dossier_vente', currentDossier);
-    queryParams.append('format', 'pdf');
-    
-    const url = `${this.baseURL}/historique/export?${queryParams.toString()}`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        ...this.getHeaders(),
-        'Accept': 'application/pdf'
-      },
-      credentials: 'include',
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.message || 'Erreur lors de l\'export PDF');
-    }
-    
-    // Créer un blob à partir de la réponse
-    const blob = await response.blob();
-    
-    // Générer le nom de fichier
-    const today = new Date().toISOString().split('T')[0];
-    const fileName = `historique_ordonnances_${today}.pdf`;
-    
-    // Créer un lien de téléchargement
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = fileName;
-    
-    // Déclencher le téléchargement
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    // Nettoyer l'URL du blob
-    window.URL.revokeObjectURL(downloadUrl);
-    
-    return {
-      success: true,
-      message: 'Export PDF généré avec succès'
-    };
-    
-  } catch (error) {
-    console.error('❌ Erreur export PDF liste:', error);
-    throw error;
-  }
-}
-
-/**
- * Imprimer la liste des ordonnances
- */
-async printHistoriqueList(params = {}) {
-  try {
-    console.log('🖨️ Impression de la liste d\'ordonnances avec params:', params);
-    
-    const currentDossier = this.getCurrentDossier();
-    const printParams = {
-      ...params,
-      current_dossier_vente: currentDossier
-    };
-    
-    const queryParams = new URLSearchParams();
-    if (printParams.medicament) queryParams.append('medicament', printParams.medicament);
-    if (printParams.date) queryParams.append('date', printParams.date);
-    if (printParams.titre) queryParams.append('titre', printParams.titre);
-    queryParams.append('current_dossier_vente', currentDossier);
-    
-    const url = `${this.baseURL}/historique/print?${queryParams.toString()}`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: this.getHeaders(),
-      credentials: 'include',
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.message || 'Erreur lors de la génération de la liste imprimable');
-    }
-    
-    // Créer une nouvelle fenêtre pour l'impression
-    const printWindow = window.open('', '_blank', 'width=800,height=1000,scrollbars=yes');
-    
-    if (!printWindow) {
-      throw new Error('Impossible d\'ouvrir la fenêtre d\'impression. Vérifiez que les popups ne sont pas bloqués.');
-    }
-    
-    // Écrire le HTML dans la nouvelle fenêtre
-    printWindow.document.write(data.data.html);
-    printWindow.document.close();
-    
-    // Attendre que le contenu soit chargé puis imprimer
-    printWindow.onload = function() {
-      setTimeout(() => {
-        printWindow.print();
-        // Optionnel : fermer la fenêtre après impression
-        printWindow.onafterprint = function() {
-          printWindow.close();
-        };
-      }, 500);
-    };
-    
-    return {
-      success: true,
-      message: 'Impression de la liste lancée'
-    };
-    
-  } catch (error) {
-    console.error('❌ Erreur impression liste:', error);
-    throw error;
-  }
-}
-
-/**
- * Méthode alternative pour impression directe de liste (avec iframe)
- */
-async printHistoriqueListDirect(params = {}) {
-  try {
-    console.log('🖨️ Impression directe de la liste (iframe)');
-    
-    // Récupérer le HTML formaté
-    const currentDossier = this.getCurrentDossier();
-    const printParams = {
-      ...params,
-      current_dossier_vente: currentDossier
-    };
-    
-    const queryParams = new URLSearchParams();
-    if (printParams.medicament) queryParams.append('medicament', printParams.medicament);
-    if (printParams.date) queryParams.append('date', printParams.date);
-    if (printParams.titre) queryParams.append('titre', printParams.titre);
-    queryParams.append('current_dossier_vente', currentDossier);
-    
-    const url = `${this.baseURL}/historique/print?${queryParams.toString()}`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: this.getHeaders(),
-      credentials: 'include',
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.message || 'Erreur lors de la génération de la liste');
-    }
-    
-    // Créer un iframe invisible pour l'impression
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'absolute';
-    iframe.style.top = '-1000px';
-    iframe.style.left = '-1000px';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = 'none';
-    
-    document.body.appendChild(iframe);
-    
-    // Écrire le contenu dans l'iframe
-    const iframeDoc = iframe.contentWindow.document;
-    iframeDoc.open();
-    iframeDoc.write(data.data.html);
-    iframeDoc.close();
-    
-    // Imprimer le contenu de l'iframe
-    setTimeout(() => {
-      iframe.contentWindow.print();
+  /**
+   * Exporter la liste des ordonnances en PDF
+   */
+  async exportHistoriqueList(params = {}) {
+    try {
+      console.log('📄 Export PDF de la liste d\'ordonnances avec params:', params);
       
-      // Nettoyer l'iframe après impression
+      const currentDossier = this.getCachedCurrentDossier();
+      const exportParams = {
+        ...params,
+        current_dossier_vente: currentDossier,
+        format: 'pdf'
+      };
+      
+      const queryParams = new URLSearchParams();
+      if (exportParams.medicament) queryParams.append('medicament', exportParams.medicament);
+      if (exportParams.date) queryParams.append('date', exportParams.date);
+      if (exportParams.titre) queryParams.append('titre', exportParams.titre);
+      queryParams.append('current_dossier_vente', currentDossier);
+      queryParams.append('format', 'pdf');
+      
+      const url = `${this.baseURL}/historique/export?${queryParams.toString()}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          ...this.getHeaders(),
+          'Accept': 'application/pdf'
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Erreur lors de l\'export PDF');
+      }
+      
+      // Créer un blob à partir de la réponse
+      const blob = await response.blob();
+      
+      // Générer le nom de fichier
+      const today = new Date().toISOString().split('T')[0];
+      const fileName = `historique_ordonnances_${today}.pdf`;
+      
+      // Créer un lien de téléchargement
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      
+      // Déclencher le téléchargement
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Nettoyer l'URL du blob
+      window.URL.revokeObjectURL(downloadUrl);
+      
+      return {
+        success: true,
+        message: 'Export PDF généré avec succès'
+      };
+      
+    } catch (error) {
+      console.error('❌ Erreur export PDF liste:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Imprimer la liste des ordonnances
+   */
+  async printHistoriqueList(params = {}) {
+    try {
+      console.log('🖨️ Impression de la liste d\'ordonnances avec params:', params);
+      
+      const currentDossier = this.getCachedCurrentDossier();
+      const printParams = {
+        ...params,
+        current_dossier_vente: currentDossier
+      };
+      
+      const queryParams = new URLSearchParams();
+      if (printParams.medicament) queryParams.append('medicament', printParams.medicament);
+      if (printParams.date) queryParams.append('date', printParams.date);
+      if (printParams.titre) queryParams.append('titre', printParams.titre);
+      queryParams.append('current_dossier_vente', currentDossier);
+      
+      const url = `${this.baseURL}/historique/print?${queryParams.toString()}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Erreur lors de la génération de la liste imprimable');
+      }
+      
+      // Créer une nouvelle fenêtre pour l'impression
+      const printWindow = window.open('', '_blank', 'width=800,height=1000,scrollbars=yes');
+      
+      if (!printWindow) {
+        throw new Error('Impossible d\'ouvrir la fenêtre d\'impression. Vérifiez que les popups ne sont pas bloqués.');
+      }
+      
+      // Écrire le HTML dans la nouvelle fenêtre
+      printWindow.document.write(data.data.html);
+      printWindow.document.close();
+      
+      // Attendre que le contenu soit chargé puis imprimer
+      printWindow.onload = function() {
+        setTimeout(() => {
+          printWindow.print();
+          // Optionnel : fermer la fenêtre après impression
+          printWindow.onafterprint = function() {
+            printWindow.close();
+          };
+        }, 500);
+      };
+      
+      return {
+        success: true,
+        message: 'Impression de la liste lancée'
+      };
+      
+    } catch (error) {
+      console.error('❌ Erreur impression liste:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Méthode alternative pour impression directe de liste (avec iframe)
+   */
+  async printHistoriqueListDirect(params = {}) {
+    try {
+      console.log('🖨️ Impression directe de la liste (iframe)');
+      
+      // Récupérer le HTML formaté
+      const currentDossier = this.getCachedCurrentDossier();
+      const printParams = {
+        ...params,
+        current_dossier_vente: currentDossier
+      };
+      
+      const queryParams = new URLSearchParams();
+      if (printParams.medicament) queryParams.append('medicament', printParams.medicament);
+      if (printParams.date) queryParams.append('date', printParams.date);
+      if (printParams.titre) queryParams.append('titre', printParams.titre);
+      queryParams.append('current_dossier_vente', currentDossier);
+      
+      const url = `${this.baseURL}/historique/print?${queryParams.toString()}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Erreur lors de la génération de la liste');
+      }
+      
+      // Créer un iframe invisible pour l'impression
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'absolute';
+      iframe.style.top = '-1000px';
+      iframe.style.left = '-1000px';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      
+      document.body.appendChild(iframe);
+      
+      // Écrire le contenu dans l'iframe
+      const iframeDoc = iframe.contentWindow.document;
+      iframeDoc.open();
+      iframeDoc.write(data.data.html);
+      iframeDoc.close();
+      
+      // Imprimer le contenu de l'iframe
       setTimeout(() => {
-        document.body.removeChild(iframe);
-      }, 1000);
-    }, 500);
-    
-    return {
-      success: true,
-      message: 'Impression directe lancée'
-    };
-    
-  } catch (error) {
-    console.error('❌ Erreur impression directe liste:', error);
-    // Fallback vers l'impression normale
-    return this.printHistoriqueList(params);
+        iframe.contentWindow.print();
+        
+        // Nettoyer l'iframe après impression
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 1000);
+      }, 500);
+      
+      return {
+        success: true,
+        message: 'Impression directe lancée'
+      };
+      
+    } catch (error) {
+      console.error('❌ Erreur impression directe liste:', error);
+      // Fallback vers l'impression normale
+      return this.printHistoriqueList(params);
+    }
   }
 }
-
-}
-
 
 const ordonnanceService = new OrdonnanceService();
 
