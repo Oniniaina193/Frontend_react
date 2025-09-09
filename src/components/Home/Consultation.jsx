@@ -3,6 +3,8 @@ import { Package, Filter, ChevronLeft, ChevronRight, Loader, AlertCircle, Trendi
 import { useData } from '../../contexts/DataContext';
 
 const Consultation = ({ onBack }) => {
+  // ==================== ÉTATS LOCAUX ====================
+  
   const [selectedFamily, setSelectedFamily] = useState('');
   const [currentResults, setCurrentResults] = useState([]);
   const [pagination, setPagination] = useState({
@@ -13,48 +15,93 @@ const Consultation = ({ onBack }) => {
   });
   const [isSearching, setIsSearching] = useState(false);
   const [allArticles, setAllArticles] = useState([]);
-
-  // Cache local pour les résultats par famille
   const [familyCache, setFamilyCache] = useState(new Map());
 
-  // ✅ CORRIGÉ: Utiliser le DataContext optimisé
+  // ==================== DATA CONTEXT ====================
+
   const {
     families,
     loading,
     errors,
-    searchArticles
+    searchArticles,
+    initialDataLoaded,
+    loadEssentialDataAfterFolder
   } = useData();
 
-  // ✅ NOUVEAU: État de connexion local basé sur les données disponibles
+  // ==================== ÉTAT DE CONNEXION ====================
+
   const connectionStatus = useMemo(() => {
+    if (loading.initial) return 'loading';
     if (loading.families) return 'loading';
-    if (errors.families) return 'error';
+    if (errors.families || errors.essential) return 'error';
     if (families.length > 0) return 'ok';
     return 'unknown';
-  }, [loading.families, errors.families, families.length]);
+  }, [loading.initial, loading.families, errors.families, errors.essential, families.length]);
 
-  // ✅ CORRIGÉ: Chargement initial amélioré
+  // ==================== EFFETS DE CHARGEMENT ====================
+
+  // Chargement automatique après que les données initiales soient disponibles
   useEffect(() => {
-    if (connectionStatus === 'ok' && allArticles.length === 0) {
+    console.log('🔄 Effect initialDataLoaded:', {
+      initialDataLoaded,
+      connectionStatus,
+      currentResultsLength: currentResults.length,
+      allArticlesLength: allArticles.length
+    });
+
+    // Charger automatiquement si les données initiales sont prêtes mais pas encore affichées
+    if (initialDataLoaded && connectionStatus === 'ok' && currentResults.length === 0 && !isSearching) {
+      console.log('🚀 Chargement automatique de la première page d\'articles...');
       loadAllArticles();
     }
-  }, [connectionStatus]);
+  }, [initialDataLoaded, connectionStatus, currentResults.length, isSearching]);
 
-  // ✅ CORRIGÉ: Fonction pour charger TOUS les articles
+  // S'assurer du chargement initial si nécessaire
+  useEffect(() => {
+    // Si on a les familles mais pas les données initiales, forcer le chargement
+    if (connectionStatus === 'ok' && !initialDataLoaded && !loading.initial && currentResults.length === 0) {
+      console.log('⚡ Forcer le chargement initial des données...');
+      loadEssentialDataAfterFolder();
+    }
+  }, [connectionStatus, initialDataLoaded, loading.initial, currentResults.length, loadEssentialDataAfterFolder]);
+
+  // Effet pour filtrage par famille
+  useEffect(() => {
+    if (!selectedFamily) {
+      // Quand pas de famille sélectionnée, afficher tous les articles
+      if (allArticles.length > 0) {
+        setCurrentResults(allArticles);
+        setPagination(prev => ({
+          ...prev,
+          current_page: 1
+        }));
+      } else if (initialDataLoaded && connectionStatus === 'ok') {
+        // Si pas d'articles en cache mais données initiales prêtes, les charger
+        loadAllArticles();
+      }
+    } else {
+      // Famille sélectionnée = filtrer
+      filterByFamily(selectedFamily);
+    }
+  }, [selectedFamily, allArticles.length, initialDataLoaded, connectionStatus]);
+
+  // ==================== FONCTIONS DE CHARGEMENT ====================
+
+  // Fonction pour charger TOUS les articles (optimisée)
   const loadAllArticles = async () => {
+    if (isSearching) return;
+    
     setIsSearching(true);
     
     try {
       console.log('🔄 Chargement de tous les articles...');
       
-      // ✅ CORRIGÉ: Recherche avec page 1 et limite plus élevée pour avoir le vrai total
       const result = await searchArticles('', '', 1, 20);
       
       if (result && result.articles) {
         setAllArticles(result.articles);
         setCurrentResults(result.articles);
         
-        // ✅ CORRIGÉ: Utiliser la pagination retournée par l'API
         const newPagination = result.pagination || {
           current_page: 1,
           total_pages: Math.ceil(result.articles.length / 20),
@@ -64,7 +111,7 @@ const Consultation = ({ onBack }) => {
         
         setPagination(newPagination);
         
-        console.log(`✅ Articles chargés: ${result.articles.length} visibles, ${newPagination.total_items} au total`);
+        console.log(`✅ Articles chargés automatiquement: ${result.articles.length} visibles, ${newPagination.total_items} au total`);
       } else {
         console.warn('⚠️ Pas d\'articles retournés');
         setAllArticles([]);
@@ -86,29 +133,7 @@ const Consultation = ({ onBack }) => {
     }
   };
 
-  // ✅ CORRIGÉ: Effet pour filtrage par famille
-  useEffect(() => {
-    if (!selectedFamily) {
-      // ✅ CORRIGÉ: Quand pas de famille sélectionnée, recharger tous les articles
-      if (allArticles.length === 0) {
-        loadAllArticles();
-      } else {
-        // Ou afficher la première page de tous les articles
-        setCurrentResults(allArticles);
-        // ✅ IMPORTANT: Garder la pagination totale, pas juste celle des articles chargés
-        setPagination(prev => ({
-          ...prev,
-          current_page: 1
-          // On garde total_pages et total_items de l'API
-        }));
-      }
-    } else {
-      // Famille sélectionnée = filtrer
-      filterByFamily(selectedFamily);
-    }
-  }, [selectedFamily]);
-
-  // ✅ CORRIGÉ: Filtrage immédiat par famille
+  // Filtrage immédiat par famille
   const filterByFamily = useCallback(async (family) => {
     if (!family) return;
 
@@ -126,7 +151,6 @@ const Consultation = ({ onBack }) => {
     try {
       console.log('🔍 Filtrage par famille:', family);
       
-      // ✅ CORRIGÉ: Utiliser limite normale pour le filtrage par famille
       const result = await searchArticles('', family, 1, 20);
       
       if (result && result.articles) {
@@ -169,16 +193,15 @@ const Consultation = ({ onBack }) => {
     }
   }, [searchArticles, familyCache]);
 
-  // ✅ CORRIGÉ: Gestion de changement de page
+  // ==================== GESTION DE PAGINATION ====================
+
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= pagination.total_pages && !isSearching) {
       console.log('📄 Changement de page vers:', newPage);
       
-      // Si on est sur une famille spécifique, recharger cette famille pour cette page
       if (selectedFamily) {
         searchFamilyPage(selectedFamily, newPage);
       } else {
-        // ✅ CORRIGÉ: Recharger tous les articles pour cette page
         searchAllArticlesPage(newPage);
       }
     }
@@ -203,12 +226,10 @@ const Consultation = ({ onBack }) => {
     }
   };
 
-  // ✅ CORRIGÉ: Recherche page pour tous les articles
   const searchAllArticlesPage = async (page) => {
     setIsSearching(true);
     
     try {
-      // ✅ CORRIGÉ: Recherche sans famille pour tous les articles
       const result = await searchArticles('', '', page, 20);
       
       if (result && result.articles) {
@@ -217,7 +238,7 @@ const Consultation = ({ onBack }) => {
           setPagination(result.pagination);
         }
         
-        // ✅ NOUVEAU: Mettre à jour le cache des articles globaux si c'est la page 1
+        // Mettre à jour le cache des articles globaux si c'est la page 1
         if (page === 1) {
           setAllArticles(result.articles);
         }
@@ -228,6 +249,8 @@ const Consultation = ({ onBack }) => {
       setIsSearching(false);
     }
   };
+
+  // ==================== GESTIONNAIRES D'ÉVÉNEMENTS ====================
 
   // Gestionnaire de changement de famille
   const handleFamilyChange = useCallback((e) => {
@@ -242,7 +265,7 @@ const Consultation = ({ onBack }) => {
   const handleRefresh = useCallback(() => {
     setAllArticles([]);
     setFamilyCache(new Map());
-    setSelectedFamily(''); // Reset de la sélection
+    setSelectedFamily('');
     setPagination({
       current_page: 1,
       total_pages: 1,
@@ -252,20 +275,17 @@ const Consultation = ({ onBack }) => {
     loadAllArticles();
   }, []);
 
-  // ✅ NOUVEAU: Fonction pour retenter la connexion
+  // Fonction pour retenter la connexion
   const handleRetryConnection = useCallback(() => {
-    // Relancer le chargement des familles et articles
     setAllArticles([]);
     setCurrentResults([]);
     setFamilyCache(new Map());
     
-    // Le DataContext va automatiquement recharger les familles
-    setTimeout(() => {
-      if (families.length > 0) {
-        loadAllArticles();
-      }
-    }, 1000);
-  }, [families.length]);
+    // Forcer le rechargement complet via le DataContext
+    loadEssentialDataAfterFolder();
+  }, [loadEssentialDataAfterFolder]);
+
+  // ==================== FONCTIONS UTILITAIRES ====================
 
   const formatPrice = (price) => {
     const numPrice = parseFloat(price);
@@ -303,7 +323,8 @@ const Consultation = ({ onBack }) => {
     }
   };
 
-  // Mémoriser les lignes du tableau
+  // ==================== MÉMORISATION DES LIGNES DU TABLEAU ====================
+
   const tableRows = useMemo(() => {
     return currentResults.map((article, index) => (
       <tr key={`${article.code}-${index}`} className="hover:bg-gray-50 transition-colors">
@@ -342,6 +363,8 @@ const Consultation = ({ onBack }) => {
     ));
   }, [currentResults]);
 
+  // ==================== RENDU DU COMPOSANT ====================
+
   return (
     <div className="flex flex-col h-full bg-white overflow-hidden">
       {/* En-tête avec filtres */}
@@ -358,7 +381,7 @@ const Consultation = ({ onBack }) => {
                 <select
                   value={selectedFamily}
                   onChange={handleFamilyChange}
-                  disabled={connectionStatus !== 'ok' || loading.families}
+                  disabled={connectionStatus !== 'ok' || loading.families || loading.initial}
                   className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors text-sm"
                 >
                   <option value="">
@@ -375,7 +398,7 @@ const Consultation = ({ onBack }) => {
 
               <button
                 onClick={handleRefresh}
-                disabled={isSearching || connectionStatus !== 'ok'}
+                disabled={isSearching || connectionStatus !== 'ok' || loading.initial}
                 className="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {isSearching ? 'Chargement...' : 'Actualiser'}
@@ -391,7 +414,8 @@ const Consultation = ({ onBack }) => {
                 connectionStatus === 'error' ? 'text-red-700' : 'text-gray-500'
               }`}>
                 {isSearching ? 'Chargement...' : 
-                 loading.families ? 'Chargement initial...' :
+                 loading.initial ? 'Chargement initial...' :
+                 loading.families ? 'Chargement familles...' :
                  connectionStatus === 'ok' ? `${pagination.total_items} article(s) ${selectedFamily ? `(${selectedFamily})` : ''}` : 
                  connectionStatus === 'error' ? 'Connexion échouée' :
                  'Connexion en cours...'}
@@ -403,6 +427,7 @@ const Consultation = ({ onBack }) => {
                 {connectionStatus === 'ok' ? 
                   `Page ${pagination.current_page} sur ${pagination.total_pages}` :
                   connectionStatus === 'error' ? 'Accès indisponible' :
+                  loading.initial ? 'Chargement données...' :
                   'Initialisation ODBC...'}
               </p>
             </div>
@@ -410,15 +435,15 @@ const Consultation = ({ onBack }) => {
         </div>
       </div>
 
-      {/* ✅ CORRIGÉ: Message d'erreur adapté */}
-      {errors.families && (
+      {/* Message d'erreur adapté */}
+      {(errors.families || errors.essential) && (
         <div className="flex-shrink-0 px-6 py-4 bg-white">
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
             <div className="flex items-start space-x-3">
               <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
               <div className="flex-1">
                 <h3 className="text-sm font-medium text-red-800">Problème de connexion</h3>
-                <p className="text-sm text-red-700 mt-1">{errors.families}</p>
+                <p className="text-sm text-red-700 mt-1">{errors.families || errors.essential}</p>
                 <div className="mt-3 flex space-x-2">
                   <button
                     onClick={handleRetryConnection}
@@ -444,14 +469,18 @@ const Consultation = ({ onBack }) => {
 
       {/* Zone de contenu */}
       <div className="flex-1 overflow-y-auto bg-white">
-        {connectionStatus === 'unknown' || connectionStatus === 'loading' ? (
+        {connectionStatus === 'unknown' || connectionStatus === 'loading' || loading.initial ? (
           <div className="flex flex-col items-center justify-center py-16">
             <Loader className="w-16 h-16 text-blue-600 mb-4 animate-spin" />
             <p className="text-gray-500 text-xl mb-2">
-              {loading.families ? 'Chargement des familles' : 'Initialisation de la connexion ODBC'}
+              {loading.initial ? 'Chargement des données initiales...' :
+               loading.families ? 'Chargement des familles...' : 
+               'Initialisation de la connexion ODBC'}
             </p>
             <p className="text-gray-400">
-              {loading.families ? 'Préparation du cache...' : 'Test de la connexion à la base Access...'}
+              {loading.initial ? 'Préparation des articles...' :
+               loading.families ? 'Préparation du cache...' : 
+               'Test de la connexion à la base Access...'}
             </p>
           </div>
         ) : connectionStatus === 'error' ? (
@@ -481,6 +510,14 @@ const Consultation = ({ onBack }) => {
                 `Aucun article dans la famille "${selectedFamily}"` : 
                 'Aucun article disponible'}
             </p>
+            {!selectedFamily && initialDataLoaded && (
+              <button
+                onClick={loadAllArticles}
+                className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Charger les articles
+              </button>
+            )}
           </div>
         ) : (
           <div className="pb-4">

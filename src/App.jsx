@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import FolderSelectionApp from './components/FolderSelectionApp';
 import LoginApp from './components/Auth/LoginApp';
 import authService from './services/authService';
-import { DataProvider } from './contexts/DataContext';
+import { DataProvider, useData } from './contexts/DataContext';
 import './App.css';
 import InterfacePrincipal from './components/Home/InterfacePrincipal';
 
@@ -13,7 +13,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   
-  // ✅ NOUVEAU: État pour gérer le chargement post-sélection
+  // État pour gérer le chargement post-sélection
   const [folderSelected, setFolderSelected] = useState(false);
   const [folderLoadingProgress, setFolderLoadingProgress] = useState({
     stage: '',
@@ -36,11 +36,9 @@ function App() {
         const user = authService.getUser();
         setCurrentUser(user);
         
-        // Optionnel : Vérifier avec le serveur (seulement si nécessaire)
         try {
           const authCheck = await authService.checkAuth();
           if (!authCheck.authenticated) {
-            // Token invalide, nettoyer
             setIsAuthenticated(false);
             setCurrentUser(null);
           }
@@ -57,7 +55,7 @@ function App() {
     }
   };
 
-  // ✅ NOUVEAU: Navigation optimisée avec chargement intelligent
+  // Navigation optimisée avec chargement intelligent
   const handleContinueToSearch = async (folderInfo) => {
     console.log('📁 Dossier sélectionné:', folderInfo);
     setFolderSelected(true);
@@ -69,12 +67,13 @@ function App() {
       message: 'Préparation de l\'interface...'
     });
     
-    // Attendre un peu pour que l'interface se mette en place
+    // Attendre que l'interface se charge
     await new Promise(resolve => setTimeout(resolve, 300));
     
+    // Passer à la vue principale
     setCurrentView('interface-principal');
     
-    // Étape 2: Le chargement des données se fera dans InterfacePrincipal
+    // Le chargement des données se fera automatiquement dans InterfacePrincipalOptimized
     setFolderLoadingProgress({
       stage: 'ready',
       progress: 100,
@@ -95,10 +94,8 @@ function App() {
   // Gestion de l'authentification
   const handleLoginRequest = () => {
     if (isAuthenticated) {
-      // Si déjà connecté, aller au dashboard
       setCurrentView('dashboard');
     } else {
-      // Sinon, aller à la page de login
       setCurrentView('login');
     }
   };
@@ -117,7 +114,7 @@ function App() {
     } finally {
       setIsAuthenticated(false);
       setCurrentUser(null);
-      setCurrentView('interface-principal'); // Retour à la recherche après déconnexion
+      setCurrentView('interface-principal');
     }
   };
 
@@ -141,41 +138,9 @@ function App() {
     );
   }
 
-  // ✅ NOUVEAU: Affichage du chargement post-sélection si nécessaire
-  if (folderSelected && folderLoadingProgress.stage === 'preparing') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto">
-          <div className="w-16 h-16 border-4 border-green-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-700 font-medium mb-2">{folderLoadingProgress.message}</p>
-          
-          {/* Barre de progression */}
-          <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
-            <div 
-              className="bg-green-600 h-2 rounded-full transition-all duration-300" 
-              style={{ width: `${folderLoadingProgress.progress}%` }}
-            ></div>
-          </div>
-          
-          <p className="text-sm text-gray-500">
-            Initialisation du dossier sélectionné...
-          </p>
-          
-          {/* Bouton retour en cas de problème */}
-          <button 
-            onClick={handleBackToSelection}
-            className="mt-4 text-sm text-blue-600 hover:text-blue-800 underline"
-          >
-            Retour à la sélection
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="App">
-      {/* Vue sélection de dossier - Pas de DataProvider nécessaire */}
+      {/* Vue sélection de dossier */}
       {currentView === 'folder-selection' && (
         <FolderSelectionApp 
           onContinue={handleContinueToSearch}
@@ -183,7 +148,7 @@ function App() {
         />
       )}
       
-      {/* Vue recherche d'articles - AVEC DataProvider optimisé */}
+      {/* Vue recherche d'articles - AVEC DataProvider */}
       {currentView === 'interface-principal' && (
         <DataProvider>
           <InterfacePrincipalOptimized
@@ -195,31 +160,21 @@ function App() {
         </DataProvider>
       )}
       
-      {/* Vue login - Pas de DataProvider nécessaire */}
+      {/* Vue login */}
       {currentView === 'login' && (
         <LoginApp 
           onLoginSuccess={handleLoginSuccess}
           onBack={handleBackFromLogin}
         />
       )}
-      
-      {/* Vue dashboard après connexion - AVEC DataProvider 
-      {currentView === 'dashboard' && (
-        <DataProvider>
-          <DashboardPrincipal 
-            user={currentUser}
-            onLogout={handleLogout}
-            onBackToApp={handleBackToApp}
-          />
-        </DataProvider>
-      )}*/}
     </div>
   );
 }
 
-// ✅ NOUVEAU: Wrapper optimisé pour InterfacePrincipal
+// Wrapper optimisé pour InterfacePrincipal
 const InterfacePrincipalOptimized = ({ onBack, onLogin, folderSelected, onLoadingProgress }) => {
   const [initialLoadCompleted, setInitialLoadCompleted] = useState(false);
+  const { loadEssentialDataAfterFolder } = useData();
   
   useEffect(() => {
     if (folderSelected && !initialLoadCompleted) {
@@ -235,47 +190,52 @@ const InterfacePrincipalOptimized = ({ onBack, onLogin, folderSelected, onLoadin
       onLoadingProgress({
         stage: 'loading_data',
         progress: 20,
-        message: 'Chargement des données...'
+        message: 'Connexion à la base de données...'
       });
       
-      // Le chargement réel se fait maintenant dans DataContext.loadEssentialDataAfterFolder()
-      // On simule juste le timing ici
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+      // Étape 2: Chargement des familles
       onLoadingProgress({
         stage: 'loading_families',
-        progress: 60,
+        progress: 40,
         message: 'Chargement des familles des articles...'
       });
       
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Le chargement réel via DataContext
+      const result = await loadEssentialDataAfterFolder();
       
-      onLoadingProgress({
-        stage: 'finalizing',
-        progress: 90,
-        message: 'Finalisation...'
-      });
-      
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      // Étape finale: Marquer comme terminé
-      onLoadingProgress({
-        stage: 'completed',
-        progress: 100,
-        message: 'Prêt !'
-      });
-      
-      setInitialLoadCompleted(true);
-      
-      console.log('✅ Initialisation post-sélection terminée');
+      if (result.success) {
+        console.log('✅ Données chargées:', {
+          families: result.families?.length || 0,
+          initialArticles: result.initialArticles?.length || 0
+        });
+        
+        // Étape 3: Articles chargés
+        onLoadingProgress({
+          stage: 'loading_articles',
+          progress: 80,
+          message: `${result.initialArticles?.length || 0} articles chargés...`
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Finalisation
+        onLoadingProgress({
+          stage: 'completed',
+          progress: 100,
+          message: 'Interface prête !'
+        });
+        
+        setInitialLoadCompleted(true);
+      } else {
+        throw new Error(result.error);
+      }
       
     } catch (error) {
-      console.error('❌ Erreur initialisation post-sélection:', error);
+      console.error('❌ Erreur initialisation:', error);
       onLoadingProgress({
         stage: 'error',
         progress: 0,
-        message: 'Erreur lors du chargement'
+        message: 'Erreur lors du chargement des données'
       });
     }
   };

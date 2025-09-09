@@ -1,8 +1,11 @@
-// contexts/DataContext.js - VERSION OPTIMISÉE
+// contexts/DataContext.js - VERSION ÉTENDUE AVEC ORDONNANCES ET STATISTIQUES
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import directAccessService from '../services/directAccessService';
 import medicamentService from '../services/medicamentService';
 import medecinService from '../services/medecinService';
+import ordonnanceService from '../services/OrdonnanceService';
+import statistiquesService from '../services/statistiquesService';
+import eventBus, { EVENTS } from '../utils/EventBus';
 
 const DataContext = createContext();
 
@@ -21,12 +24,20 @@ export const DataProvider = ({ children }) => {
   const [families, setFamilies] = useState([]);
   const [medicaments, setMedicaments] = useState([]);
   const [medecins, setMedecins] = useState([]);
+  const [ordonnances, setOrdonnances] = useState([]);
+  const [statistiques, setStatistiques] = useState({
+    dashboard: null,
+    ventes: null,
+    topMedicaments: null
+  });
   
   const [loading, setLoading] = useState({
     articles: false,
     families: false,
     medicaments: false,
     medecins: false,
+    ordonnances: false,
+    statistiques: false,
     initial: false 
   });
 
@@ -35,47 +46,143 @@ export const DataProvider = ({ children }) => {
   // Cache optimisé avec nettoyage automatique
   const [cache, setCache] = useState({
     articlesSearches: new Map(),
+    ordonnancesSearches: new Map(),
+    statistiquesCache: null,
+    statistiquesTimestamp: 0,
     lastSearch: '',
     lastFamily: ''
   });
 
   // Références pour éviter les appels multiples simultanés
   const searchAbortControllerRef = useRef(null);
+  const ordonnanceAbortControllerRef = useRef(null);
+  const statistiquesAbortControllerRef = useRef(null);
   const lastSearchRef = useRef('');
+  const lastOrdonnanceSearchRef = useRef('');
   
-  // ✅ NOUVEAU: Flag pour éviter les chargements multiples
+  // Flag pour éviter les chargements multiples
   const isLoadingRef = useRef({
     families: false,
     medicaments: false,
-    medecins: false
+    medecins: false,
+    ordonnances: false,
+    statistiques: false
   });
+
+  // État pour suivre si les données initiales sont chargées
+  const [initialDataLoaded, setInitialDataLoaded] = useState(false);
+
+  // ==================== ÉVÉNEMENTS SYSTÈME ====================
+  
+  useEffect(() => {
+    // Écouter les événements d'ordonnances
+    const handleOrdonnanceCreated = (data) => {
+      console.log('Ordonnance créée, ajout local:', data);
+      setOrdonnances(prev => [data, ...prev]);
+      
+      // Invalider le cache des statistiques
+      setCache(prev => ({
+        ...prev,
+        statistiquesCache: null,
+        statistiquesTimestamp: 0
+      }));
+    };
+
+    const handleOrdonnanceUpdated = ({ id, data }) => {
+      console.log('Ordonnance mise à jour:', id, data);
+      setOrdonnances(prev => prev.map(ord => 
+        ord.id === id ? { ...ord, ...data } : ord
+      ));
+    };
+
+    const handleOrdonnanceDeleted = ({ id }) => {
+      console.log('Ordonnance supprimée:', id);
+      setOrdonnances(prev => prev.filter(ord => ord.id !== id));
+      
+      // Invalider le cache des statistiques
+      setCache(prev => ({
+        ...prev,
+        statistiquesCache: null,
+        statistiquesTimestamp: 0
+      }));
+    };
+
+    const handleStatsRefreshNeeded = (data) => {
+      console.log('Refresh des statistiques demandé depuis:', data.source);
+      // Refresh automatique seulement si les stats sont déjà chargées
+      if (cache.statistiquesCache) {
+        loadStatistiquesLazy(true);
+      }
+    };
+
+    // Enregistrer les listeners
+    eventBus.on(EVENTS.ORDONNANCE_CREATED, handleOrdonnanceCreated);
+    eventBus.on(EVENTS.ORDONNANCE_UPDATED, handleOrdonnanceUpdated);
+    eventBus.on(EVENTS.ORDONNANCE_DELETED, handleOrdonnanceDeleted);
+    eventBus.on(EVENTS.STATS_REFRESH_NEEDED, handleStatsRefreshNeeded);
+
+    // Nettoyage à la destruction
+    return () => {
+      eventBus.off(EVENTS.ORDONNANCE_CREATED, handleOrdonnanceCreated);
+      eventBus.off(EVENTS.ORDONNANCE_UPDATED, handleOrdonnanceUpdated);
+      eventBus.off(EVENTS.ORDONNANCE_DELETED, handleOrdonnanceDeleted);
+      eventBus.off(EVENTS.STATS_REFRESH_NEEDED, handleStatsRefreshNeeded);
+    };
+  }, [cache.statistiquesCache]);
 
   // ==================== CHARGEMENT INTELLIGENT POST-SÉLECTION ====================
 
-  // ✅ NOUVEAU: Chargement optimisé après sélection du dossier
+  // Chargement optimisé après sélection du dossier AVEC articles initiaux
   const loadEssentialDataAfterFolder = useCallback(async () => {
-    console.log('🚀 Chargement essentiel après sélection dossier...');
+    console.log('Chargement essentiel après sélection dossier...');
+    
+    setLoading(prev => ({ ...prev, initial: true }));
+    setInitialDataLoaded(false);
     
     try {
       // 1. CRITIQUE: Charger seulement les familles (rapide)
       const families = await loadFamilies();
       
-      // 2. IMPORTANT: Différer les autres chargements
+      // 2. NOUVEAU: Charger immédiatement la première page d'articles
+      console.log('Chargement de la première page d\'articles...');
+      const initialArticles = await searchArticles('', '', 1, 20);
+      
+      // 3. IMPORTANT: Différer les autres chargements
       setTimeout(() => {
-        loadMedicamentsLazy(50); // Seulement 50 au lieu de 1000
+        loadMedicamentsLazy(50);
       }, 500);
       
       setTimeout(() => {
-        loadMedecinsLazy(30); // Seulement 30 au lieu de 1000  
+        loadMedecinsLazy(30);
       }, 1000);
+
+      // 4. NOUVEAU: Charger les dernières ordonnances (différé)
+      setTimeout(() => {
+        loadOrdonnancesLazy(20);
+      }, 1500);
       
-      console.log('✅ Chargement essentiel terminé');
-      return { success: true, families };
+      // 5. NOUVEAU: Charger les statistiques (le plus tardif)
+      setTimeout(() => {
+        loadStatistiquesLazy();
+      }, 2000);
+      
+      // Marquer les données initiales comme chargées
+      setInitialDataLoaded(true);
+      
+      console.log('Chargement essentiel terminé avec articles:', initialArticles?.articles?.length || 0);
+      return { 
+        success: true, 
+        families, 
+        initialArticles: initialArticles?.articles || [],
+        pagination: initialArticles?.pagination || {}
+      };
       
     } catch (error) {
-      console.error('❌ Erreur chargement essentiel:', error);
+      console.error('Erreur chargement essentiel:', error);
       setErrors(prev => ({ ...prev, essential: error.message }));
       return { success: false, error: error.message };
+    } finally {
+      setLoading(prev => ({ ...prev, initial: false }));
     }
   }, []);
 
@@ -83,8 +190,8 @@ export const DataProvider = ({ children }) => {
 
   // Charger les familles (le plus critique)
   const loadFamilies = useCallback(async () => {
-    if (families.length > 0) return families; // Déjà chargé
-    if (isLoadingRef.current.families) return []; // Éviter doublons
+    if (families.length > 0) return families;
+    if (isLoadingRef.current.families) return [];
     
     isLoadingRef.current.families = true;
     setLoading(prev => ({ ...prev, families: true }));
@@ -95,7 +202,7 @@ export const DataProvider = ({ children }) => {
       if (result.success) {
         setFamilies(result.data);
         setErrors(prev => ({ ...prev, families: null }));
-        console.log('✅ Familles chargées:', result.data.length);
+        console.log('Familles chargées:', result.data.length);
         return result.data;
       } else {
         throw new Error(result.message);
@@ -109,7 +216,7 @@ export const DataProvider = ({ children }) => {
     }
   }, [families.length]);
 
-  // ✅ NOUVEAU: Chargement lazy des médicaments (limité)
+  // Chargement lazy des médicaments (limité)
   const loadMedicamentsLazy = useCallback(async (limit = 50) => {
     if (medicaments.length > 0) return medicaments; 
     if (isLoadingRef.current.medicaments) return []; 
@@ -125,7 +232,7 @@ export const DataProvider = ({ children }) => {
       if (result.success) {
         setMedicaments(result.data.medicaments);
         setErrors(prev => ({ ...prev, medicaments: null }));
-        console.log('✅ Médicaments chargés (lazy):', result.data.medicaments.length);
+        console.log('Médicaments chargés (lazy):', result.data.medicaments.length);
         return result.data.medicaments;
       } else {
         throw new Error(result.message);
@@ -139,7 +246,7 @@ export const DataProvider = ({ children }) => {
     }
   }, [medicaments.length]);
 
-  // ✅ NOUVEAU: Chargement lazy des médecins (limité)
+  // Chargement lazy des médecins (limité)
   const loadMedecinsLazy = useCallback(async (limit = 30) => {
     if (medecins.length > 0) return medecins; 
     if (isLoadingRef.current.medecins) return [];
@@ -155,7 +262,7 @@ export const DataProvider = ({ children }) => {
       if (result.success) {
         setMedecins(result.data.medecins);
         setErrors(prev => ({ ...prev, medecins: null }));
-        console.log('✅ Médecins chargés (lazy):', result.data.medecins.length);
+        console.log('Médecins chargés (lazy):', result.data.medecins.length);
         return result.data.medecins;
       } else {
         throw new Error(result.message);
@@ -169,7 +276,118 @@ export const DataProvider = ({ children }) => {
     }
   }, [medecins.length]);
 
-  // ✅ NOUVEAU: Chargement complet à la demande
+  // ==================== NOUVEAU: CHARGEMENT LAZY ORDONNANCES ====================
+  
+  const loadOrdonnancesLazy = useCallback(async (limit = 20, params = {}) => {
+    if (isLoadingRef.current.ordonnances) return ordonnances;
+    
+    isLoadingRef.current.ordonnances = true;
+    setLoading(prev => ({ ...prev, ordonnances: true }));
+    
+    try {
+      const result = await ordonnanceService.getOrdonnances({
+        per_page: limit,
+        page: 1,
+        ...params
+      });
+      
+      if (result.success) {
+        const newOrdonnances = result.data.ordonnances || [];
+        setOrdonnances(newOrdonnances);
+        setErrors(prev => ({ ...prev, ordonnances: null }));
+        console.log('Ordonnances chargées (lazy):', newOrdonnances.length);
+        return newOrdonnances;
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      console.error('Erreur chargement ordonnances lazy:', error);
+      setErrors(prev => ({ ...prev, ordonnances: error.message }));
+      return [];
+    } finally {
+      setLoading(prev => ({ ...prev, ordonnances: false }));
+      isLoadingRef.current.ordonnances = false;
+    }
+  }, [ordonnances]);
+
+  // ==================== NOUVEAU: CHARGEMENT LAZY STATISTIQUES ====================
+  
+  const loadStatistiquesLazy = useCallback(async (forceRefresh = false) => {
+    const now = Date.now();
+    const cacheMaxAge = 5 * 60 * 1000; // 5 minutes
+    
+    // Utiliser le cache si valide et pas de force refresh
+    if (!forceRefresh && 
+        cache.statistiquesCache && 
+        (now - cache.statistiquesTimestamp) < cacheMaxAge) {
+      console.log('Statistiques depuis le cache');
+      setStatistiques(cache.statistiquesCache);
+      return cache.statistiquesCache;
+    }
+    
+    if (isLoadingRef.current.statistiques && !forceRefresh) return statistiques;
+    
+    isLoadingRef.current.statistiques = true;
+    setLoading(prev => ({ ...prev, statistiques: true }));
+    
+    // Annuler la requête précédente si elle existe
+    if (statistiquesAbortControllerRef.current) {
+      statistiquesAbortControllerRef.current.abort();
+    }
+    
+    const abortController = new AbortController();
+    statistiquesAbortControllerRef.current = abortController;
+    
+    try {
+      const result = await statistiquesService.getAllStatistiques();
+      
+      if (abortController.signal.aborted) {
+        return statistiques;
+      }
+      
+      const newStats = {
+        dashboard: result.dashboard,
+        ventes: result.ventes,
+        topMedicaments: result.topMedicaments
+      };
+      
+      setStatistiques(newStats);
+      setErrors(prev => ({ ...prev, statistiques: null }));
+      
+      // Mettre en cache
+      setCache(prev => ({
+        ...prev,
+        statistiquesCache: newStats,
+        statistiquesTimestamp: now
+      }));
+      
+      console.log('Statistiques chargées:', {
+        dashboard: !!result.dashboard,
+        ventes: !!result.ventes,
+        topMedicaments: !!result.topMedicaments,
+        errors: result.errors?.length || 0
+      });
+      
+      return newStats;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('Chargement statistiques annulé');
+        return statistiques;
+      }
+      
+      console.error('Erreur chargement statistiques:', error);
+      setErrors(prev => ({ ...prev, statistiques: error.message }));
+      return statistiques;
+    } finally {
+      setLoading(prev => ({ ...prev, statistiques: false }));
+      isLoadingRef.current.statistiques = false;
+      if (statistiquesAbortControllerRef.current === abortController) {
+        statistiquesAbortControllerRef.current = null;
+      }
+    }
+  }, [cache.statistiquesCache, cache.statistiquesTimestamp, statistiques]);
+
+  // Chargement complet à la demande
   const loadFullMedicaments = useCallback(async () => {
     return loadMedicamentsLazy(1000);
   }, [loadMedicamentsLazy]);
@@ -178,77 +396,29 @@ export const DataProvider = ({ children }) => {
     return loadMedecinsLazy(1000); 
   }, [loadMedecinsLazy]);
 
-  // ==================== NETTOYAGE AUTOMATIQUE ====================
-
-  useEffect(() => {
-    // Nettoyage du cache toutes les 10 minutes
-    const cacheCleanInterval = setInterval(() => {
-      cleanOldCache();
-    }, 10 * 60 * 1000);
-
-    return () => {
-      clearInterval(cacheCleanInterval);
-      if (searchAbortControllerRef.current) {
-        searchAbortControllerRef.current.abort();
-      }
-    };
-  }, []);
-
-  // Nettoyage automatique du cache ancien (>30 minutes)
-  const cleanOldCache = useCallback(() => {
-    const now = Date.now();
-    const maxAge = 30 * 60 * 1000; 
-
-    setCache(prev => {
-      const newSearches = new Map();
-      
-      for (const [key, value] of prev.articlesSearches) {
-        if (now - value.timestamp < maxAge) {
-          newSearches.set(key, value);
-        }
-      }
-      
-      if (newSearches.size !== prev.articlesSearches.size) {
-        console.log('🧹 Cache nettoyé:', prev.articlesSearches.size - newSearches.size, 'entrées supprimées');
-      }
-      
-      return {
-        ...prev,
-        articlesSearches: newSearches
-      };
-    });
-  }, []);
-
-  const clearCache = useCallback(() => {
-    setCache({
-      articlesSearches: new Map(),
-      lastSearch: '',
-      lastFamily: ''
-    });
-    console.log('🗑️ Cache vidé');
-  }, []);
+  const loadFullOrdonnances = useCallback(async (params = {}) => {
+    return loadOrdonnancesLazy(1000, params);
+  }, [loadOrdonnancesLazy]);
 
   // ==================== RECHERCHE D'ARTICLES OPTIMISÉE ====================
 
-  const searchArticles = useCallback(async (searchTerm = '', selectedFamily = '', page = 1, limit = 100) => {
+  const searchArticles = useCallback(async (searchTerm = '', selectedFamily = '', page = 1, limit = 20) => {
     const trimmedTerm = searchTerm.trim();
-    
-    // Créer une clé de cache
     const cacheKey = `${trimmedTerm.toLowerCase()}-${selectedFamily}-${page}-${limit}`;
     
-    // Annuler la recherche précédente si elle existe
+    // Annuler la recherche précédente
     if (searchAbortControllerRef.current) {
       searchAbortControllerRef.current.abort();
     }
     
-    // Vérifier le cache d'abord pour des résultats instantanés
+    // Vérifier le cache
     if (cache.articlesSearches.has(cacheKey)) {
       const cachedResult = cache.articlesSearches.get(cacheKey);
-      console.log('⚡ Résultat instantané du cache DataContext:', cacheKey);
+      console.log('Résultat instantané du cache:', cacheKey);
       return cachedResult;
     }
 
-    // Éviter les doublons de recherche
+    // Éviter les doublons
     if (lastSearchRef.current === cacheKey) {
       return { articles: [], pagination: {} };
     }
@@ -256,7 +426,6 @@ export const DataProvider = ({ children }) => {
 
     setLoading(prev => ({ ...prev, articles: true }));
     
-    // Créer un nouveau AbortController pour cette recherche
     const abortController = new AbortController();
     searchAbortControllerRef.current = abortController;
     
@@ -268,7 +437,6 @@ export const DataProvider = ({ children }) => {
         limit
       });
 
-      // Vérifier si la recherche n'a pas été annulée
       if (abortController.signal.aborted) {
         return { articles: [], pagination: {} };
       }
@@ -280,13 +448,11 @@ export const DataProvider = ({ children }) => {
           timestamp: Date.now()
         };
 
-        // Mise en cache optimisée avec limitation intelligente
+        // Mise en cache optimisée
         setCache(prev => {
           const newSearches = new Map(prev.articlesSearches);
           
-          // Limiter à 100 entrées avec suppression des plus anciennes
           if (newSearches.size >= 100) {
-            // Supprimer les 20 entrées les plus anciennes
             const entries = Array.from(newSearches.entries())
               .sort((a, b) => a[1].timestamp - b[1].timestamp);
             
@@ -304,7 +470,7 @@ export const DataProvider = ({ children }) => {
         });
         
         setErrors(prev => ({ ...prev, articles: null }));
-        console.log('💾 Mise en cache DataContext:', cacheKey, `(${result.data.articles?.length || 0} résultats)`);
+        console.log('Mise en cache:', cacheKey, `(${result.data.articles?.length || 0} résultats)`);
         
         return searchResult;
       } else {
@@ -312,7 +478,7 @@ export const DataProvider = ({ children }) => {
       }
     } catch (error) {
       if (error.name === 'AbortError') {
-        console.log('🚫 Recherche annulée:', cacheKey);
+        console.log('Recherche annulée:', cacheKey);
         return { articles: [], pagination: {} };
       }
       
@@ -320,7 +486,6 @@ export const DataProvider = ({ children }) => {
       throw error;
     } finally {
       setLoading(prev => ({ ...prev, articles: false }));
-      // Nettoyer la référence
       if (searchAbortControllerRef.current === abortController) {
         searchAbortControllerRef.current = null;
       }
@@ -328,9 +493,195 @@ export const DataProvider = ({ children }) => {
     }
   }, [cache.articlesSearches]);
 
+  // ==================== NOUVEAU: RECHERCHE D'ORDONNANCES OPTIMISÉE ====================
+  
+  const searchOrdonnances = useCallback(async (params = {}, page = 1, limit = 20) => {
+    const {
+      search = '',
+      medecin_id = '',
+      client_id = '',
+      date_debut = '',
+      date_fin = ''
+    } = params;
+    
+    const cacheKey = `${search.toLowerCase()}-${medecin_id}-${client_id}-${date_debut}-${date_fin}-${page}-${limit}`;
+    
+    // Annuler la recherche précédente
+    if (ordonnanceAbortControllerRef.current) {
+      ordonnanceAbortControllerRef.current.abort();
+    }
+    
+    // Vérifier le cache
+    if (cache.ordonnancesSearches.has(cacheKey)) {
+      const cachedResult = cache.ordonnancesSearches.get(cacheKey);
+      console.log('Ordonnances depuis le cache:', cacheKey);
+      return cachedResult;
+    }
+
+    // Éviter les doublons
+    if (lastOrdonnanceSearchRef.current === cacheKey) {
+      return { ordonnances: [], pagination: {} };
+    }
+    lastOrdonnanceSearchRef.current = cacheKey;
+
+    setLoading(prev => ({ ...prev, ordonnances: true }));
+    
+    const abortController = new AbortController();
+    ordonnanceAbortControllerRef.current = abortController;
+    
+    try {
+      const result = await ordonnanceService.getOrdonnances({
+        search: search.trim(),
+        medecin_id,
+        client_id,
+        date_debut,
+        date_fin,
+        page,
+        per_page: limit
+      });
+
+      if (abortController.signal.aborted) {
+        return { ordonnances: [], pagination: {} };
+      }
+
+      if (result.success) {
+        const searchResult = {
+          ordonnances: result.data.ordonnances || [],
+          pagination: result.data.pagination || {},
+          timestamp: Date.now()
+        };
+
+        // Mise en cache optimisée (plus petite pour les ordonnances)
+        setCache(prev => {
+          const newSearches = new Map(prev.ordonnancesSearches);
+          
+          if (newSearches.size >= 50) {
+            const entries = Array.from(newSearches.entries())
+              .sort((a, b) => a[1].timestamp - b[1].timestamp);
+            
+            for (let i = 0; i < 10; i++) {
+              newSearches.delete(entries[i][0]);
+            }
+          }
+          
+          newSearches.set(cacheKey, searchResult);
+          
+          return {
+            ...prev,
+            ordonnancesSearches: newSearches
+          };
+        });
+        
+        setErrors(prev => ({ ...prev, ordonnances: null }));
+        console.log('Ordonnances mises en cache:', cacheKey, `(${result.data.ordonnances?.length || 0} résultats)`);
+        
+        return searchResult;
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        console.log('Recherche ordonnances annulée:', cacheKey);
+        return { ordonnances: [], pagination: {} };
+      }
+      
+      setErrors(prev => ({ ...prev, ordonnances: error.message }));
+      throw error;
+    } finally {
+      setLoading(prev => ({ ...prev, ordonnances: false }));
+      if (ordonnanceAbortControllerRef.current === abortController) {
+        ordonnanceAbortControllerRef.current = null;
+      }
+      lastOrdonnanceSearchRef.current = '';
+    }
+  }, [cache.ordonnancesSearches]);
+
+  // ==================== NETTOYAGE AUTOMATIQUE ====================
+
+  useEffect(() => {
+    const cacheCleanInterval = setInterval(() => {
+      cleanOldCache();
+    }, 10 * 60 * 1000);
+
+    return () => {
+      clearInterval(cacheCleanInterval);
+      if (searchAbortControllerRef.current) {
+        searchAbortControllerRef.current.abort();
+      }
+      if (ordonnanceAbortControllerRef.current) {
+        ordonnanceAbortControllerRef.current.abort();
+      }
+      if (statistiquesAbortControllerRef.current) {
+        statistiquesAbortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  const cleanOldCache = useCallback(() => {
+    const now = Date.now();
+    const maxAge = 30 * 60 * 1000; // 30 minutes pour articles
+    const maxAgeOrdonnances = 15 * 60 * 1000; // 15 minutes pour ordonnances
+    const maxAgeStats = 5 * 60 * 1000; // 5 minutes pour stats
+
+    setCache(prev => {
+      const newArticlesSearches = new Map();
+      const newOrdonnancesSearches = new Map();
+      
+      // Nettoyer le cache des articles
+      for (const [key, value] of prev.articlesSearches) {
+        if (now - value.timestamp < maxAge) {
+          newArticlesSearches.set(key, value);
+        }
+      }
+      
+      // Nettoyer le cache des ordonnances
+      for (const [key, value] of prev.ordonnancesSearches) {
+        if (now - value.timestamp < maxAgeOrdonnances) {
+          newOrdonnancesSearches.set(key, value);
+        }
+      }
+      
+      // Nettoyer le cache des statistiques
+      let newStatsCache = prev.statistiquesCache;
+      let newStatsTimestamp = prev.statistiquesTimestamp;
+      
+      if (prev.statistiquesCache && (now - prev.statistiquesTimestamp) > maxAgeStats) {
+        newStatsCache = null;
+        newStatsTimestamp = 0;
+      }
+      
+      const totalCleaned = (prev.articlesSearches.size - newArticlesSearches.size) + 
+                          (prev.ordonnancesSearches.size - newOrdonnancesSearches.size) +
+                          (prev.statistiquesCache && !newStatsCache ? 1 : 0);
+      
+      if (totalCleaned > 0) {
+        console.log('Cache nettoyé:', totalCleaned, 'entrées supprimées');
+      }
+      
+      return {
+        ...prev,
+        articlesSearches: newArticlesSearches,
+        ordonnancesSearches: newOrdonnancesSearches,
+        statistiquesCache: newStatsCache,
+        statistiquesTimestamp: newStatsTimestamp
+      };
+    });
+  }, []);
+
+  const clearCache = useCallback(() => {
+    setCache({
+      articlesSearches: new Map(),
+      ordonnancesSearches: new Map(),
+      statistiquesCache: null,
+      statistiquesTimestamp: 0,
+      lastSearch: '',
+      lastFamily: ''
+    });
+    console.log('Cache vidé');
+  }, []);
+
   // ==================== CRUD OPTIMISÉ ====================
 
-  // CRUD médicaments 
   const addMedicament = async (medicamentData) => {
     try {
       const result = await medicamentService.createMedicament(medicamentData);
@@ -344,7 +695,6 @@ export const DataProvider = ({ children }) => {
         
         setMedicaments(prev => [newMedicament, ...prev]);
         
-        // Ajouter la famille si nouvelle
         if (!families.includes(medicamentData.famille)) {
           setFamilies(prev => [...prev, medicamentData.famille]);
         }
@@ -370,7 +720,6 @@ export const DataProvider = ({ children }) => {
             : med
         ));
         
-        // Ajouter la famille si nouvelle
         if (!families.includes(medicamentData.famille)) {
           setFamilies(prev => [...prev, medicamentData.famille]);
         }
@@ -401,7 +750,6 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  // CRUD médecins (identique)
   const addMedecin = async (medecinData) => {
     try {
       const result = await medecinService.createMedecin(medecinData);
@@ -457,29 +805,191 @@ export const DataProvider = ({ children }) => {
     }
   };
 
-  // ==================== RAFRAÎCHISSEMENT OPTIMISÉ ====================
+  // ==================== NOUVEAU: CRUD ORDONNANCES ====================
+
+  const addOrdonnance = async (ordonnanceData) => {
+    try {
+      const result = await ordonnanceService.createOrdonnance(ordonnanceData);
+      
+      if (result.success) {
+        // L'ajout local est géré par l'événement ORDONNANCE_CREATED
+        // Invalider le cache des recherches d'ordonnances
+        setCache(prev => ({
+          ...prev,
+          ordonnancesSearches: new Map()
+        }));
+        
+        return result;
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      console.error('Erreur ajout ordonnance:', error);
+      throw error;
+    }
+  };
+
+  const updateOrdonnance = async (id, ordonnanceData) => {
+    try {
+      const result = await ordonnanceService.updateOrdonnance(id, ordonnanceData);
+      
+      if (result.success) {
+        // La mise à jour locale est gérée par l'événement ORDONNANCE_UPDATED
+        // Invalider le cache des recherches d'ordonnances
+        setCache(prev => ({
+          ...prev,
+          ordonnancesSearches: new Map()
+        }));
+        
+        return result;
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      console.error('Erreur modification ordonnance:', error);
+      throw error;
+    }
+  };
+
+  const deleteOrdonnance = async (id) => {
+    try {
+      const result = await ordonnanceService.deleteOrdonnance(id);
+      
+      if (result.success) {
+        // La suppression locale est gérée par l'événement ORDONNANCE_DELETED
+        // Invalider le cache des recherches d'ordonnances
+        setCache(prev => ({
+          ...prev,
+          ordonnancesSearches: new Map()
+        }));
+        
+        return result;
+      } else {
+        throw new Error(result.message);
+      }
+    } catch (error) {
+      console.error('Erreur suppression ordonnance:', error);
+      throw error;
+    }
+  };
+
+  // ==================== MÉTHODES STATISTIQUES ====================
+
+  const refreshStatistiques = useCallback(async (force = false) => {
+    return await loadStatistiquesLazy(force);
+  }, [loadStatistiquesLazy]);
+
+  const getStatistiquesFormatees = useCallback(() => {
+    if (!statistiques.dashboard || !statistiques.ventes || !statistiques.topMedicaments) {
+      return null;
+    }
+
+    return {
+      cartes: statistiquesService.formatDashboardCards(statistiques.dashboard),
+      graphiqueVentes: statistiquesService.formatVentesForChart(statistiques.ventes),
+      graphiqueTop: statistiquesService.formatTopMedicamentsForChart(statistiques.topMedicaments)
+    };
+  }, [statistiques]);
+
+  // ==================== MÉTHODES UTILITAIRES ORDONNANCES ====================
+
+  const searchMedicamentsRapide = useCallback(async (query, limit = 10) => {
+    try {
+      return await ordonnanceService.searchMedicamentsRapide(query, limit);
+    } catch (error) {
+      console.error('Erreur recherche médicaments rapide:', error);
+      return { success: false, data: [], message: error.message };
+    }
+  }, []);
+
+  const getHistoriqueParMedicament = useCallback(async (params = {}) => {
+    try {
+      return await ordonnanceService.getHistoriqueParMedicament(params);
+    } catch (error) {
+      console.error('Erreur historique par médicament:', error);
+      throw error;
+    }
+  }, []);
+
+  const getHistoriqueParMedicamentLibre = useCallback(async (params = {}) => {
+    try {
+      return await ordonnanceService.getHistoriqueParMedicamentLibre(params);
+    } catch (error) {
+      console.error('Erreur historique par médicament libre:', error);
+      throw error;
+    }
+  }, []);
+
+  const printOrdonnance = useCallback(async (ordonnanceId) => {
+    try {
+      return await ordonnanceService.printOrdonnance(ordonnanceId);
+    } catch (error) {
+      console.error('Erreur impression ordonnance:', error);
+      throw error;
+    }
+  }, []);
+
+  const downloadPdfOrdonnance = useCallback(async (ordonnanceId, numeroOrdonnance) => {
+    try {
+      return await ordonnanceService.downloadPdfOrdonnance(ordonnanceId, numeroOrdonnance);
+    } catch (error) {
+      console.error('Erreur téléchargement PDF:', error);
+      throw error;
+    }
+  }, []);
+
+  const exportHistoriqueList = useCallback(async (params = {}) => {
+    try {
+      return await ordonnanceService.exportHistoriqueList(params);
+    } catch (error) {
+      console.error('Erreur export historique:', error);
+      throw error;
+    }
+  }, []);
+
+  const printHistoriqueList = useCallback(async (params = {}) => {
+    try {
+      return await ordonnanceService.printHistoriqueList(params);
+    } catch (error) {
+      console.error('Erreur impression historique:', error);
+      throw error;
+    }
+  }, []);
+
+  // ==================== RAFRAÎCHISSEMENT ====================
 
   const refreshAllData = useCallback(async () => {
     clearCache();
     
-    // Annuler les recherches en cours
     if (searchAbortControllerRef.current) {
       searchAbortControllerRef.current.abort();
     }
+    if (ordonnanceAbortControllerRef.current) {
+      ordonnanceAbortControllerRef.current.abort();
+    }
+    if (statistiquesAbortControllerRef.current) {
+      statistiquesAbortControllerRef.current.abort();
+    }
     
-    // Reset des flags
     isLoadingRef.current = {
       families: false,
       medicaments: false,
-      medecins: false
+      medecins: false,
+      ordonnances: false,
+      statistiques: false
     };
     
-    // Reset des états
     setFamilies([]);
     setMedicaments([]);
     setMedecins([]);
+    setOrdonnances([]);
+    setStatistiques({
+      dashboard: null,
+      ventes: null,
+      topMedicaments: null
+    });
+    setInitialDataLoaded(false);
     
-    // Recharger seulement l'essentiel
     await loadEssentialDataAfterFolder();
   }, [clearCache, loadEssentialDataAfterFolder]);
 
@@ -491,47 +1001,77 @@ export const DataProvider = ({ children }) => {
     families,
     medicaments,
     medecins,
+    ordonnances,
+    statistiques,
     
     // États
     loading,
     errors,
+    initialDataLoaded,
     
-    // ✅ NOUVEAU: Fonction de chargement intelligent
+    // Fonction principale de chargement
     loadEssentialDataAfterFolder,
     
-    // Fonction de recherche optimisée
+    // Recherche
     searchArticles,
+    searchOrdonnances,
     
-    // Fonctions CRUD médicaments
+    // CRUD médicaments
     addMedicament,
     updateMedicament,
     deleteMedicament,
     
-    // Fonctions CRUD médecins
+    // CRUD médecins
     addMedecin,
     updateMedecin,
     deleteMedecin,
     
-    // Fonctions utilitaires
+    // CRUD ordonnances
+    addOrdonnance,
+    updateOrdonnance,
+    deleteOrdonnance,
+    
+    // Statistiques
+    refreshStatistiques,
+    getStatistiquesFormatees,
+    
+    // Utilitaires ordonnances/historique
+    searchMedicamentsRapide,
+    getHistoriqueParMedicament,
+    getHistoriqueParMedicamentLibre,
+    printOrdonnance,
+    downloadPdfOrdonnance,
+    exportHistoriqueList,
+    printHistoriqueList,
+    
+    // Utilitaires
     loadFamilies,
     loadMedicamentsLazy,
     loadMedecinsLazy,
+    loadOrdonnancesLazy,
+    loadStatistiquesLazy,
     loadFullMedicaments,
-    loadFullMedecins,   
+    loadFullMedecins,
+    loadFullOrdonnances,
     clearCache,
     refreshAllData,
     
-    // Informations sur le cache
-    cacheSize: cache.articlesSearches.size,
+    // Cache stats
+    cacheSize: cache.articlesSearches.size + cache.ordonnancesSearches.size,
     getCacheStats: () => ({
-      size: cache.articlesSearches.size,
-      entries: Array.from(cache.articlesSearches.keys()),
-      oldestEntry: cache.articlesSearches.size > 0 
-        ? Math.min(...Array.from(cache.articlesSearches.values()).map(v => v.timestamp))
-        : null,
-      newestEntry: cache.articlesSearches.size > 0 
-        ? Math.max(...Array.from(cache.articlesSearches.values()).map(v => v.timestamp))
-        : null
+      articles: {
+        size: cache.articlesSearches.size,
+        entries: Array.from(cache.articlesSearches.keys()),
+      },
+      ordonnances: {
+        size: cache.ordonnancesSearches.size,
+        entries: Array.from(cache.ordonnancesSearches.keys()),
+      },
+      statistiques: {
+        cached: !!cache.statistiquesCache,
+        timestamp: cache.statistiquesTimestamp ? new Date(cache.statistiquesTimestamp) : null,
+        age: cache.statistiquesTimestamp ? Date.now() - cache.statistiquesTimestamp : null
+      }
     })
   };
 

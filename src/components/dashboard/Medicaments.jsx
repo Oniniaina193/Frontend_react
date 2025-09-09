@@ -2,6 +2,86 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Search, Loader, AlertCircle, CheckCircle, X, Edit2, Save, XCircle } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 
+// Composant de notification Windows (remplace les anciens messages error/success)
+const WindowsNotification = ({ type, title, message, onClose, isVisible }) => {
+  useEffect(() => {
+    if (isVisible) {
+      const timer = setTimeout(() => {
+        onClose();
+      }, 4000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isVisible, onClose]);
+
+  if (!isVisible) return null;
+
+  const getNotificationStyles = () => {
+    switch (type) {
+      case 'success':
+        return {
+          bg: 'bg-white',
+          border: 'border-l-4 border-l-green-500',
+          icon: <CheckCircle className="w-6 h-6 text-green-500" />,
+          titleColor: 'text-green-800',
+          messageColor: 'text-green-600'
+        };
+      case 'error':
+        return {
+          bg: 'bg-white',
+          border: 'border-l-4 border-l-red-500',
+          icon: <AlertCircle className="w-6 h-6 text-red-500" />,
+          titleColor: 'text-red-800',
+          messageColor: 'text-red-600'
+        };
+      default:
+        return {
+          bg: 'bg-white',
+          border: 'border-l-4 border-l-blue-500',
+          icon: <AlertCircle className="w-6 h-6 text-blue-500" />,
+          titleColor: 'text-blue-800',
+          messageColor: 'text-blue-600'
+        };
+    }
+  };
+
+  const styles = getNotificationStyles();
+
+  return (
+    <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-right-full duration-300">
+      <div className={`${styles.bg} ${styles.border} rounded-lg shadow-2xl border border-gray-200 min-w-80 max-w-md`}>
+        <div className="p-4">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              {styles.icon}
+            </div>
+            <div className="ml-3 flex-1">
+              <h3 className={`text-sm font-semibold ${styles.titleColor}`}>
+                {title}
+              </h3>
+              <p className={`mt-1 text-sm ${styles.messageColor}`}>
+                {message}
+              </p>
+            </div>
+            <div className="flex-shrink-0 ml-2">
+              <button
+                onClick={onClose}
+                className="inline-flex text-gray-400 hover:text-gray-600 focus:outline-none focus:text-gray-600 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div className="h-1 bg-gray-200 rounded-b-lg overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 animate-pulse"></div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Medicaments = () => {
   // États du formulaire
   const [nouveauMedicament, setNouveauMedicament] = useState({
@@ -22,12 +102,16 @@ const Medicaments = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
-  // Messages
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  // ✅ REMPLACÉ: Les anciens error/success par une notification Windows
+  const [notification, setNotification] = useState({
+    isVisible: false,
+    type: '',
+    title: '',
+    message: ''
+  });
   const [submitting, setSubmitting] = useState(false);
 
-  // ✅ CORRIGÉ: Utiliser le DataContext optimisé avec chargement lazy
+  // ✅ GARDÉ: Utiliser le DataContext optimisé avec chargement lazy
   const {
     medicaments,
     families,
@@ -35,23 +119,39 @@ const Medicaments = () => {
     addMedicament,
     updateMedicament,
     deleteMedicament,
-    loadMedicamentsLazy,     // ✅ NOUVEAU: Fonction de chargement lazy
-    loadFullMedicaments      // ✅ NOUVEAU: Fonction de chargement complet si besoin
+    loadMedicamentsLazy,
+    loadFullMedicaments
   } = useData();
 
-  // ✅ NOUVEAU: Chargement automatique des médicaments si pas encore chargés
+  // ✅ GARDÉ: Chargement automatique des médicaments si pas encore chargés
   useEffect(() => {
     if (medicaments.length === 0 && !loading.medicaments) {
-      // Chargement lazy par défaut (50 médicaments)
       console.log('🚀 Chargement automatique des médicaments...');
       loadMedicamentsLazy(50);
     }
   }, [medicaments.length, loading.medicaments, loadMedicamentsLazy]);
 
-  // ✅ NOUVEAU: Fonction pour charger plus de médicaments si nécessaire
+  // ✅ NOUVEAU: Fonctions pour les notifications Windows
+  const showNotification = (type, title, message) => {
+    setNotification({
+      isVisible: true,
+      type,
+      title,
+      message
+    });
+  };
+
+  const closeNotification = () => {
+    setNotification(prev => ({
+      ...prev,
+      isVisible: false
+    }));
+  };
+
+  // ✅ GARDÉ: Fonction pour charger plus de médicaments si nécessaire
   const handleLoadMore = () => {
     console.log('📦 Chargement complet des médicaments...');
-    loadFullMedicaments(); // Charge tous les médicaments (1000)
+    loadFullMedicaments();
   };
 
   // Filtrage et pagination côté client (ultra-rapide)
@@ -82,16 +182,14 @@ const Medicaments = () => {
     }));
   };
 
-  // Ajouter un médicament - Utilise le cache
+  // ✅ MODIFIÉ: Ajouter un médicament - Remplacer setError/setSuccess par showNotification
   const handleAjouter = async () => {
     if (!nouveauMedicament.nom.trim() || !nouveauMedicament.famille.trim()) {
-      setError('Veuillez remplir tous les champs');
+      showNotification('error', 'Erreur', 'Veuillez remplir tous les champs');
       return;
     }
 
     setSubmitting(true);
-    setError('');
-    setSuccess('');
 
     try {
       await addMedicament({
@@ -100,10 +198,9 @@ const Medicaments = () => {
       });
 
       setNouveauMedicament({ nom: '', famille: '' });
-      setSuccess('Médicament ajouté avec succès !');
-      setTimeout(() => setSuccess(''), 3000);
+      showNotification('success', 'Succès', 'Médicament ajouté avec succès !');
     } catch (error) {
-      setError(error.message);
+      showNotification('error', 'Erreur', error.message);
     } finally {
       setSubmitting(false);
     }
@@ -132,15 +229,12 @@ const Medicaments = () => {
     }));
   };
 
-  // Sauvegarder la modification - Utilise le cache
+  // ✅ MODIFIÉ: Sauvegarder la modification - Remplacer setError/setSuccess par showNotification
   const handleSaveEdit = async (id) => {
     if (!editingData.nom.trim() || !editingData.famille.trim()) {
-      setError('Veuillez remplir tous les champs');
+      showNotification('error', 'Erreur', 'Veuillez remplir tous les champs');
       return;
     }
-
-    setError('');
-    setSuccess('');
 
     try {
       await updateMedicament(id, {
@@ -148,30 +242,25 @@ const Medicaments = () => {
         famille: editingData.famille.trim()
       });
 
-      setSuccess('Médicament modifié avec succès !');
+      showNotification('success', 'Succès', 'Médicament modifié avec succès !');
       setEditingId(null);
       setEditingData({ nom: '', famille: '' });
-      setTimeout(() => setSuccess(''), 3000);
     } catch (error) {
-      setError(error.message);
+      showNotification('error', 'Erreur', error.message);
     }
   };
 
-  // Supprimer un médicament - Utilise le cache
+  // ✅ GARDÉ: Supprimer un médicament - Garder le confirm() + remplacer setSuccess/setError par showNotification
   const handleSupprimer = async (medicament) => {
     if (!confirm(`Êtes-vous sûr de vouloir supprimer "${medicament.nom}" ?`)) {
       return;
     }
 
-    setError('');
-    setSuccess('');
-
     try {
       await deleteMedicament(medicament.id);
-      setSuccess('Médicament supprimé avec succès !');
-      setTimeout(() => setSuccess(''), 3000);
+      showNotification('success', 'Succès', 'Médicament supprimé avec succès !');
     } catch (error) {
-      setError(error.message);
+      showNotification('error', 'Erreur', error.message);
     }
   };
 
@@ -182,56 +271,31 @@ const Medicaments = () => {
     }
   };
 
-  // Masquer les messages
-  const hideMessage = (type) => {
-    if (type === 'error') setError('');
-    if (type === 'success') setSuccess('');
-  };
-
   // Reset des filtres
   const handleSearchChange = (value) => {
     setSearchTerm(value);
-    setCurrentPage(1); // Reset à la page 1
+    setCurrentPage(1);
   };
 
   const handleFamilyChange = (value) => {
     setSelectedFamily(value);
-    setCurrentPage(1); // Reset à la page 1
+    setCurrentPage(1);
   };
 
   return (
     <div className="space-y-3">
       <h2 className="text-2xl font-bold text-gray-900 mb-0 font-serif">Gestion des Médicaments</h2>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start">
-              <AlertCircle className="w-5 h-5 text-red-600 mr-2 mt-0.5" />
-              <p className="text-red-700">{error}</p>
-            </div>
-            <button onClick={() => hideMessage('error')} className="text-red-600 hover:text-red-800">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
+      {/* ✅ REMPLACÉ: Les anciennes div error/success par WindowsNotification */}
+      <WindowsNotification
+        type={notification.type}
+        title={notification.title}
+        message={notification.message}
+        isVisible={notification.isVisible}
+        onClose={closeNotification}
+      />
 
-      {success && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-start justify-between">
-            <div className="flex items-start">
-              <CheckCircle className="w-5 h-5 text-green-600 mr-2 mt-0.5" />
-              <p className="text-green-700">{success}</p>
-            </div>
-            <button onClick={() => hideMessage('success')} className="text-green-600 hover:text-green-800">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ✅ NOUVEAU: Bouton pour charger plus de médicaments si nécessaire */}
+      {/* ✅ GARDÉ: Bouton pour charger plus de médicaments si nécessaire */}
       {medicaments.length > 0 && medicaments.length % 50 === 0 && !loading.medicaments && (
         <div className="text-center bg-blue-50 border border-blue-200 rounded-lg p-3">
           <p className="text-sm text-blue-700 mb-2">

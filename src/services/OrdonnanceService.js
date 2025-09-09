@@ -1004,6 +1004,183 @@ class OrdonnanceService {
     }
   }
 
+  // Ajouter ces nouvelles méthodes à votre OrdonnanceService existant
+
+/**
+ * Recherche rapide de médicaments pour autocomplétion
+ * Recherche dans les médicaments déjà utilisés dans les ordonnances
+ */
+async searchMedicamentsRapide(query, limit = 10) {
+  try {
+    if (!query || query.trim().length < 2) {
+      return { success: true, data: [] };
+    }
+
+    const currentDossier = this.getCachedCurrentDossier();
+    const url = `${this.baseURL}/medicaments/search-rapide?` +
+                `q=${encodeURIComponent(query.trim())}&` +
+                `limit=${limit}&` +
+                `current_dossier_vente=${encodeURIComponent(currentDossier)}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(),
+      credentials: 'include',
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Erreur lors de la recherche de médicaments');
+    }
+
+    return data;
+  } catch (error) {
+    console.error('Erreur searchMedicamentsRapide:', error);
+    return { success: false, data: [], message: error.message };
+  }
+}
+
+/**
+ * Recherche d'historique avec médicament en saisie libre
+ * Cette méthode supporte maintenant la recherche par médicament saisi librement
+ */
+async getHistoriqueParMedicamentLibre(params = {}) {
+  try {
+    const paramsWithDossier = this.addDossierToParams(params);
+    
+    const queryParams = new URLSearchParams();
+    
+    // Support de la recherche libre de médicaments
+    if (paramsWithDossier.medicament_libre) {
+      queryParams.append('medicament_libre', paramsWithDossier.medicament_libre);
+    }
+    
+    // Support de la recherche exacte (ancienne méthode)
+    if (paramsWithDossier.medicament) {
+      queryParams.append('medicament', paramsWithDossier.medicament);
+    }
+    
+    if (paramsWithDossier.date) queryParams.append('date', paramsWithDossier.date);
+    if (paramsWithDossier.page) queryParams.append('page', paramsWithDossier.page);
+    if (paramsWithDossier.per_page) queryParams.append('per_page', paramsWithDossier.per_page);
+    queryParams.append('current_dossier_vente', paramsWithDossier.current_dossier_vente);
+
+    if (!paramsWithDossier.medicament_libre && !paramsWithDossier.medicament && !paramsWithDossier.date) {
+      throw new Error('Au moins un critère de recherche est requis (médicament ou date)');
+    }
+
+    const url = `${this.baseURL}/historique/libre${queryParams.toString() ? `?${queryParams}` : ''}`;
+    
+    console.log('🔍 Recherche historique libre avec URL:', url);
+    
+    const response = await fetch(url, { 
+      method: 'GET', 
+      headers: this.getHeaders(),
+      credentials: 'include'
+    });
+    
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Erreur lors de la récupération de l\'historique');
+    
+    return data;
+  } catch (error) {
+    console.error('Erreur getHistoriqueParMedicamentLibre:', error);
+    throw error;
+  }
+}
+
+/**
+ * Méthode optimisée pour récupérer les suggestions de médicaments
+ * Utilise un cache local pour éviter les requêtes répétées
+ */
+async getSuggestionsMedicaments(forceRefresh = false) {
+  try {
+    // Cache local des suggestions (5 minutes)
+    const cacheKey = `suggestions_medicaments_${this.getCachedCurrentDossier()}`;
+    const cached = sessionStorage.getItem(cacheKey);
+    const cacheTimestamp = sessionStorage.getItem(`${cacheKey}_timestamp`);
+    
+    if (!forceRefresh && cached && cacheTimestamp) {
+      const age = Date.now() - parseInt(cacheTimestamp);
+      if (age < 5 * 60 * 1000) { // 5 minutes
+        return { success: true, data: JSON.parse(cached), fromCache: true };
+      }
+    }
+
+    // Récupérer depuis l'API
+    const response = await this.getMedicamentsAvecOrdonnances();
+    
+    if (response.success) {
+      // Mettre en cache
+      sessionStorage.setItem(cacheKey, JSON.stringify(response.data));
+      sessionStorage.setItem(`${cacheKey}_timestamp`, Date.now().toString());
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('Erreur getSuggestionsMedicaments:', error);
+    
+    // Fallback : essayer le cache même s'il est expiré
+    const cacheKey = `suggestions_medicaments_${this.getCachedCurrentDossier()}`;
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      return { 
+        success: true, 
+        data: JSON.parse(cached), 
+        fromCache: true,
+        message: 'Données depuis le cache (erreur réseau)'
+      };
+    }
+    
+    throw error;
+  }
+}
+
+/**
+ * Invalider le cache des suggestions (à appeler après création d'ordonnance)
+ */
+invalidateSuggestionsCache() {
+  const currentDossier = this.getCachedCurrentDossier();
+  const cacheKey = `suggestions_medicaments_${currentDossier}`;
+  sessionStorage.removeItem(cacheKey);
+  sessionStorage.removeItem(`${cacheKey}_timestamp`);
+  console.log('🗑️ Cache suggestions invalidé pour dossier:', currentDossier);
+}
+
+// Modifier la méthode createOrdonnance existante pour invalider le cache
+async createOrdonnance(ordonnanceData) {
+  try {
+    const dataWithDossier = {
+      ...ordonnanceData,
+      current_dossier_vente: this.getCachedCurrentDossier()
+    };
+    
+    const response = await fetch(this.baseURL, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(dataWithDossier),
+    });
+    
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Erreur lors de la création de l\'ordonnance');
+    }
+    
+    // Invalider le cache des suggestions
+    this.invalidateSuggestionsCache();
+    
+    // Émettre l'événement de création
+    eventBus.emit(EVENTS.ORDONNANCE_CREATED, data.data);
+    console.log('📡 Événement ORDONNANCE_CREATED émis:', data.data);
+    
+    return data;
+  } catch (error) {
+    console.error('Erreur createOrdonnance:', error);
+    throw error;
+  }
+}
+
   /**
    * Méthode alternative pour impression directe de liste (avec iframe)
    */

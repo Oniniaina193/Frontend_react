@@ -1,43 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import statistiquesService from '../../services/StatistiquesService';
-import { useStatisticsRefresh } from '../../../central/hooks/useStatisticsRefresh';
+import { useData } from '../../contexts/DataContext';
 
 const Statistiques = () => {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const {
+    statistiques,
+    loading,
+    errors,
+    refreshStatistiques,
+    getStatistiquesFormatees
+  } = useData();
+
+  const [lastRefresh, setLastRefresh] = useState(new Date());
   const [dashboardStats, setDashboardStats] = useState([]);
   const [ventesData, setVentesData] = useState([]);
   const [topMedicaments, setTopMedicaments] = useState([]);
-  const [dossierActuel, setDossierActuel] = useState('');
-  const [lastRefresh, setLastRefresh] = useState(new Date());
 
-  // Fonction de rechargement des statistiques
-  const loadStatistiques = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      console.log('🔄 Chargement des statistiques...');
-      const result = await statistiquesService.getAllStatistiques();
-
-      // Dashboard
-      if (result.dashboard && result.dashboard.success) {
-        const cards = statistiquesService.formatDashboardCards(result.dashboard);
-        setDashboardStats(cards);
-        setDossierActuel(result.dashboard.data.dossier_actuel || '');
-      }
-
-      // Ventes mensuelles
-      if (result.ventes && result.ventes.success) {
-        const chartData = statistiquesService.formatVentesForChart(result.ventes);
-        setVentesData(chartData);
-      }
-
-      // Top médicaments 
-      if (result.topMedicaments && result.topMedicaments.success) {
-        const topData = statistiquesService.formatTopMedicamentsForChart(result.topMedicaments);
-        const barData = topData.slice(0, 10).map((medicament, index) => ({
+  // Fonction pour charger/reformater les données
+  const updateDisplayData = () => {
+    const formattedData = getStatistiquesFormatees();
+    
+    if (formattedData) {
+      setDashboardStats(formattedData.cartes || []);
+      setVentesData(formattedData.graphiqueVentes || []);
+      
+      // Formater les données pour le graphique en barres
+      if (formattedData.graphiqueTop) {
+        const barData = formattedData.graphiqueTop.slice(0, 10).map((medicament, index) => ({
           rang: index + 1,
           name: medicament.name,
           value: medicament.value,
@@ -45,34 +34,24 @@ const Statistiques = () => {
         }));
         setTopMedicaments(barData);
       }
-
-      // Gérer les erreurs partielles
-      if (result.errors && result.errors.length > 0) {
-        console.warn('Erreurs lors du chargement des statistiques:', result.errors);
-      }
-
-      // Mettre à jour l'heure du dernier refresh
+      
       setLastRefresh(new Date());
-      console.log('✅ Statistiques rechargées avec succès');
-
-    } catch (err) {
-      console.error('Erreur lors du chargement des statistiques:', err);
-      setError(err.message || 'Erreur lors du chargement des statistiques');
-    } finally {
-      setLoading(false);
     }
-  }, []);
+  };
 
-  // Utiliser le hook personnalisé pour écouter les événements
-  useStatisticsRefresh(loadStatistiques);
-
-  // Chargement initial
+  // Charger les données au montage et quand les statistiques changent
   useEffect(() => {
-    loadStatistiques();
-  }, [loadStatistiques]);
+    updateDisplayData();
+  }, [statistiques]);
 
-  const handleRetry = () => {
-    loadStatistiques();
+  // Fonction de refresh manuel
+  const handleRefresh = async () => {
+    try {
+      await refreshStatistiques(true); // Force refresh
+      console.log('✅ Statistiques actualisées manuellement');
+    } catch (error) {
+      console.error('Erreur lors du refresh manuel:', error);
+    }
   };
 
   // Tooltip personnalisé pour le diagramme en barres
@@ -90,7 +69,8 @@ const Statistiques = () => {
     return null;
   };
 
-  if (loading) {
+  // Gestion du loading
+  if (loading.statistiques && !statistiques.dashboard) {
     return (
       <div className="space-y-6">
         <h2 className="text-2xl font-bold text-gray-900 font-serif">Tableau de bord</h2>
@@ -104,7 +84,8 @@ const Statistiques = () => {
     );
   }
 
-  if (error) {
+  // Gestion des erreurs
+  if (errors.statistiques) {
     return (
       <div className="space-y-6">
         <h2 className="text-2xl font-bold text-gray-900 font-serif">Tableau de bord</h2>
@@ -117,10 +98,10 @@ const Statistiques = () => {
             </div>
             <div className="ml-3">
               <h3 className="text-sm font-medium text-red-800">Erreur de chargement</h3>
-              <p className="mt-1 text-sm text-red-700">{error}</p>
+              <p className="mt-1 text-sm text-red-700">{errors.statistiques}</p>
               <div className="mt-3">
                 <button
-                  onClick={handleRetry}
+                  onClick={handleRefresh}
                   className="bg-red-100 px-3 py-1 rounded text-red-800 text-sm hover:bg-red-200 transition-colors"
                 >
                   Réessayer
@@ -142,11 +123,19 @@ const Statistiques = () => {
           <div className="flex items-center space-x-2 text-sm text-gray-500">
             <span>Mis à jour: {lastRefresh.toLocaleTimeString()}</span>
             <button
-              onClick={handleRetry}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              onClick={handleRefresh}
+              disabled={loading.statistiques}
+              className={`p-1 hover:bg-gray-100 rounded transition-colors ${
+                loading.statistiques ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
               title="Actualiser les statistiques"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg 
+                className={`w-4 h-4 ${loading.statistiques ? 'animate-spin' : ''}`} 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
@@ -289,6 +278,16 @@ const Statistiques = () => {
           )}
         </div>
       </div>
+
+      {/* État de chargement overlay pendant le refresh */}
+      {loading.statistiques && statistiques.dashboard && (
+        <div className="fixed top-4 right-4 bg-blue-100 border border-blue-200 rounded-md p-3 shadow-lg z-50">
+          <div className="flex items-center space-x-2">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+            <span className="text-blue-700 text-sm">Actualisation en cours...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
