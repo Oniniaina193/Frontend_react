@@ -17,7 +17,9 @@ import {
   Download
 } from 'lucide-react';
 
+import ordonnanceService from '../../services/OrdonnanceService';
 import clientService from '../../services/ClientService';
+import medecinService from '../../services/medecinService';
 import { useData } from '../../contexts/DataContext';
 
 // NOUVEAUX IMPORTS POUR LES OPTIMISATIONS
@@ -422,26 +424,11 @@ const FormulaireMedecin = ({ onSubmit, onCancel, loading = false }) => {
   );
 };
 
-// Composant principal Ordonnances avec intégration DataContext
+// Composant principal Ordonnances avec les 2 optimisations
 const Ordonnances = () => {
-  // Utilisation du DataContext
-  const { 
-    ordonnances: contextOrdonnances,
-    medecins, 
-    loading: contextLoading,
-    errors: contextErrors,
-    searchOrdonnances,
-    addOrdonnance,
-    updateOrdonnance,
-    deleteOrdonnance,
-    addMedecin,
-    searchMedicamentsRapide,
-    printOrdonnance,
-    downloadPdfOrdonnance
-  } = useData();
-
-  // États locaux pour le composant
-  const [allOrdonnances, setAllOrdonnances] = useState([]);
+  // États principaux
+  const [ordonnances, setOrdonnances] = useState([]);
+  const [allOrdonnances, setAllOrdonnances] = useState([]); // OPTIMISATION 2: Cache complet pour recherche
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -484,18 +471,17 @@ const Ordonnances = () => {
   const [printerStatus, setPrinterStatus] = useState(null);
   const [printingOrdonnance, setPrintingOrdonnance] = useState(null);
 
+  // Utiliser le DataContext pour les médecins
+  const { medecins, addMedecin, loading: contextLoading } = useData();
+
   // Hook pour les notifications d'impression
   const { notification, showSuccess, showError, showInfo, hideNotification } = usePrintNotifications();
 
   // Notifications harmonisées
   const notifications = useOptimizedNotifications();
 
-  // Synchroniser avec le DataContext
-  useEffect(() => {
-    setAllOrdonnances(contextOrdonnances);
-  }, [contextOrdonnances]);
-
-  // RECHERCHE INSTANTANÉE
+  // OPTIMISATION 2: RECHERCHE INSTANTANÉE
+  // Filtrer les ordonnances en temps réel basé sur le terme de recherche
   const filteredOrdonnances = useMemo(() => {
     if (!searchTerm.trim()) {
       return allOrdonnances;
@@ -518,9 +504,11 @@ const Ordonnances = () => {
 
   // Mise à jour des ordonnances affichées quand le filtre change
   useEffect(() => {
+    setOrdonnances(filteredOrdonnances);
+    // Recalculer la pagination
     const itemsPerPage = 10;
     setTotalPages(Math.ceil(filteredOrdonnances.length / itemsPerPage));
-    setCurrentPage(1);
+    setCurrentPage(1); // Remettre à la première page lors d'une nouvelle recherche
   }, [filteredOrdonnances]);
 
   // Pagination côté client pour les résultats filtrés
@@ -566,9 +554,55 @@ const Ordonnances = () => {
     };
   }, []);
 
-  // Chargement initial
+  // Chargement initial - charger TOUTES les ordonnances une seule fois
   useEffect(() => {
-    loadAllClients();
+    const loadAllOrdonnancesOnce = async () => {
+      setLoading(true);
+      setError('');
+      
+      try {
+        // Debug du dossier
+        console.log('=== DEBUT DEBUG ===');
+        await ordonnanceService.debugCurrentDossier();
+        
+        // Vérification configuration
+        const verification = await ordonnanceService.verifyDossierConfiguration();
+        console.log('Vérification dossier:', verification);
+        
+        if (!verification.success) {
+          setError(`Problème de configuration dossier: ${verification.message}`);
+          return;
+        }
+        
+        // Charger TOUTES les ordonnances (pagination élevée pour tout récupérer)
+        const response = await ordonnanceService.getOrdonnances({
+          page: 1,
+          per_page: 1000, // Récupérer beaucoup d'ordonnances d'un coup
+          search: '' // Pas de recherche côté serveur
+        });
+
+        if (response.success) {
+          const ordonnancesWithCorrectTotal = response.data.ordonnances.map(ord => ({
+            ...ord,
+            total_medicaments: ord.lignes?.length || ord.total_medicaments || 0
+          }));
+          
+          // Stocker dans le cache complet
+          setAllOrdonnances(ordonnancesWithCorrectTotal);
+        }
+      } catch (err) {
+        setError('Erreur lors du chargement des ordonnances');
+        notifications.showError('Erreur lors du chargement des ordonnances');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+      
+      // Charger les clients une seule fois aussi
+      loadAllClients();
+    };
+
+    loadAllOrdonnancesOnce();
   }, []);
 
   // Charger tous les clients 
@@ -586,17 +620,21 @@ const Ordonnances = () => {
     }
   };
 
-  // Handler pour l'ajout de médecin avec DataContext
+  // OPTIMISATION 1: Handler pour l'ajout de médecin avec notifications harmonisées
   const handleAddMedecin = async (medecinData) => {
     setLoadingAddMedecin(true);
+    
+    // Fermer le modal immédiatement
     setShowAddMedecinModal(false);
     
     try {
       const result = await addMedecin(medecinData);
       
       if (result.success) {
+        // Sélectionner automatiquement le nouveau médecin
         const newMedecinId = result.data.id;
         setFormData(prev => ({ ...prev, medecin_id: newMedecinId }));
+        
         notifications.showSuccess('Médecin ajouté avec succès!');
       }
     } catch (error) {
@@ -626,74 +664,115 @@ const Ordonnances = () => {
     setEditingId(null);
   }, []);
 
-  // Créer une ordonnance avec DataContext
+  // OPTIMISATION 1: Créer une ordonnance avec mise à jour automatique clients
   const handleCreateOrdonnance = useCallback(async () => {
     setError('');
     
     try {
-      const ordonnanceData = {
-        numero_ordonnance: formData.numero_ordonnance,
-        medecin_id: formData.medecin_id,
-        date: formData.date,
-        client_nom_complet: formData.client_nom_complet,
-        client_adresse: formData.client_adresse,
-        client_telephone: formData.client_telephone,
-        medicaments: medicaments,
-        code_ticket: formData.code_ticket
-      };
+      const ordonnanceData = ordonnanceService.formatOrdonnanceForSubmit(
+        formData, 
+        medicaments, 
+        clientExistant
+      );
 
-      // Validation basique
-      if (!ordonnanceData.numero_ordonnance || !ordonnanceData.medecin_id || !ordonnanceData.client_nom_complet) {
-        setError('Veuillez remplir tous les champs obligatoires');
+      const errors = ordonnanceService.validateOrdonnanceData(ordonnanceData);
+      if (errors.length > 0) {
+        setError(errors.join(', '));
+        notifications.showError('Données invalides: ' + errors.join(', '));
         return;
       }
 
-      if (medicaments.length === 0) {
-        setError('Veuillez ajouter au moins un médicament');
-        return;
-      }
-
+      // CONFIRMATION avant création
       const confirmCreate = confirm(`Créer l'ordonnance ${formData.numero_ordonnance} avec ${medicaments.length} médicament(s) ?`);
       if (!confirmCreate) return;
 
+      // MISE À JOUR OPTIMISTE
+      const optimisticOrdonnance = {
+        id: `temp_${Date.now()}`,
+        numero_ordonnance: formData.numero_ordonnance,
+        date: formData.date,
+        medecin: formData.medecin_id ? 
+          medecins.find(m => m.id === parseInt(formData.medecin_id)) || 
+          { nom_complet: 'Chargement...' } : null,
+        client: clientExistant || {
+          nom_complet: formData.client_nom_complet || 'Nouveau client',
+          adresse: formData.client_adresse,
+          telephone: formData.client_telephone
+        },
+        total_medicaments: medicaments.length,
+        lignes: medicaments,
+        _isOptimistic: true,
+        _isLoading: true
+      };
+
+      // Ajouter au cache complet
+      setAllOrdonnances(prev => [optimisticOrdonnance, ...prev]);
+      
+      // Fermer le modal immédiatement
       setShowAddModal(false);
       resetForm();
       
+      // Notification immédiate
       notifications.showInfo('Création en cours...');
 
-      const response = await addOrdonnance(ordonnanceData);
-      
-      if (response.success) {
-        if (!clientExistant && formData.client_nom_complet) {
-          console.log('🔄 Nouveau client créé, rechargement de la liste...');
-          await loadAllClients();
-          notifications.showInfo('Liste des clients mise à jour', { duration: 2000 });
-        }
+      try {
+        const response = await ordonnanceService.createOrdonnance(ordonnanceData);
         
-        notifications.showSuccess(
-          `Ordonnance ${response.data.numero_ordonnance} créée avec succès (${medicaments.length} médicament(s))`
-        );
-      } else {
-        throw new Error(response.message || 'Erreur lors de la création');
+        if (response.success) {
+          // Remplacer l'ordonnance optimiste par la vraie
+          const realOrdonnance = {
+            ...response.data,
+            total_medicaments: response.data.lignes?.length || medicaments.length,
+            _isOptimistic: false,
+            _isLoading: false
+          };
+          
+          setAllOrdonnances(prev => prev.map(ord => 
+            ord.id === optimisticOrdonnance.id ? realOrdonnance : ord
+          ));
+          
+          // OPTIMISATION 1: REFRESH AUTOMATIQUE DES CLIENTS
+          // Si un nouveau client a été créé, recharger la liste des clients
+          if (!clientExistant && formData.client_nom_complet) {
+            console.log('🔄 Nouveau client créé, rechargement de la liste...');
+            await loadAllClients();
+            notifications.showInfo('Liste des clients mise à jour', { duration: 2000 });
+          }
+          
+          // NOTIFICATION DE SUCCÈS avec détails
+          notifications.showSuccess(
+            `Ordonnance ${response.data.numero_ordonnance} créée avec succès (${realOrdonnance.total_medicaments} médicament(s))`
+          );
+          
+          // ÉVÉNEMENTS pour synchronisation
+          eventBus.emit(EVENTS.ORDONNANCE_CREATED, response.data);
+        }
+      } catch (apiError) {
+        // Rollback : supprimer l'ordonnance optimiste
+        setAllOrdonnances(prev => prev.filter(ord => ord.id !== optimisticOrdonnance.id));
+        setError('Erreur lors de la création: ' + apiError.message);
+        notifications.showError('Erreur lors de la création: ' + apiError.message);
+        
+        // Rouvrir le modal en cas d'erreur
+        setShowAddModal(true);
+        // Restaurer les données du formulaire
+        setMedicaments(medicaments);
+        setClientExistant(clientExistant);
       }
     } catch (err) {
       setError('Erreur lors de la création: ' + err.message);
       notifications.showError('Erreur lors de la création: ' + err.message);
-      setShowAddModal(true);
     }
-  }, [formData, medicaments, clientExistant, resetForm, notifications, addOrdonnance, loadAllClients]);
+  }, [formData, medicaments, clientExistant, resetForm, notifications, medecins, loadAllClients]);
 
-  // Handlers pour les fonctionnalités de tickets (simulés pour l'exemple)
+  // Handlers mémorisés
   const handleSuggestNumero = useCallback(async () => {
     setLoadingNumeroSuggestion(true);
     try {
-      // Générer un numéro automatique basé sur la date
-      const now = new Date();
-      const dateString = now.toISOString().slice(0, 10).replace(/-/g, '');
-      const timeString = now.toTimeString().slice(0, 8).replace(/:/g, '');
-      const suggested = `ORD-${dateString}-${timeString}`;
-      
-      setFormData(prev => ({ ...prev, numero_ordonnance: suggested }));
+      const response = await ordonnanceService.suggestNumeroOrdonnance();
+      if (response.success) {
+        setFormData(prev => ({ ...prev, numero_ordonnance: response.data.numero_suggere }));
+      }
     } catch (err) {
       console.error('Erreur suggestion numéro:', err);
     } finally {
@@ -706,31 +785,25 @@ const Ordonnances = () => {
       setTickets([]);
       return;
     }
-    // Simulation de recherche de tickets
-    setTickets([
-      { id: 1, code: query + '001' },
-      { id: 2, code: query + '002' }
-    ]);
+    try {
+      const response = await ordonnanceService.searchTickets(query);
+      if (response.success) {
+        setTickets(response.data);
+      }
+    } catch (err) {
+      console.error('Erreur recherche tickets:', err);
+    }
   }, []);
 
   const handleLoadTicketDetails = useCallback(async (codeTicket) => {
     setLoadingTicket(true);
     setError('');
     try {
-      // Simulation de chargement de médicaments depuis un ticket
-      const simulatedMedicaments = [
-        {
-          id: 1,
-          code_medicament: 'MED001',
-          designation: 'Paracétamol 500mg',
-          quantite: 20,
-          posologie: '',
-          duree: ''
-        }
-      ];
-      
-      setMedicaments(simulatedMedicaments);
-      setFormData(prev => ({ ...prev, code_ticket: codeTicket }));
+      const response = await ordonnanceService.getTicketDetails(codeTicket);
+      if (response.success) {
+        setMedicaments(response.data.medicaments);
+        setFormData(prev => ({ ...prev, code_ticket: codeTicket }));
+      }
     } catch (err) {
       setError('Erreur lors du chargement du ticket: ' + err.message);
     } finally {
@@ -765,61 +838,109 @@ const Ordonnances = () => {
     setShowAddMedecinModal(true);
   }, []);
 
-  // Modifier une ordonnance avec DataContext
+  // Modifier une ordonnance avec mise à jour optimiste
   const handleUpdateOrdonnance = useCallback(async () => {
     setError('');
     
     try {
-      const ordonnanceData = {
-        numero_ordonnance: formData.numero_ordonnance,
-        medecin_id: formData.medecin_id,
-        date: formData.date,
-        client_nom_complet: formData.client_nom_complet,
-        client_adresse: formData.client_adresse,
-        client_telephone: formData.client_telephone,
-        medicaments: medicaments
-      };
+      const ordonnanceData = ordonnanceService.formatOrdonnanceForUpdate(
+        formData, 
+        medicaments, 
+        clientExistant
+      );
 
-      // Validation
-      if (!ordonnanceData.client_nom_complet || !ordonnanceData.client_adresse) {
-        setError('Veuillez remplir tous les champs obligatoires du client');
+      const errors = ordonnanceService.validateOrdonnanceData(ordonnanceData, true);
+      if (errors.length > 0) {
+        setError(errors.join(', '));
+        notifications.showError('Données invalides: ' + errors.join(', '));
         return;
       }
 
-      if (medicaments.length === 0) {
-        setError('Veuillez ajouter au moins un médicament');
-        return;
-      }
-
+      // CONFIRMATION avant modification
       const confirmUpdate = confirm(
         `Modifier l'ordonnance ${formData.numero_ordonnance} ?\n` +
         `Nouveau nombre de médicaments: ${medicaments.length}`
       );
       if (!confirmUpdate) return;
 
+      // Sauvegarder l'ordonnance actuelle pour rollback
+      const currentOrdonnance = allOrdonnances.find(ord => ord.id === editingId);
+      
+      // MISE À JOUR OPTIMISTE
+      setAllOrdonnances(prev => prev.map(ord => 
+        ord.id === editingId ? {
+          ...ord,
+          date: formData.date,
+          client: {
+            nom_complet: formData.client_nom_complet,
+            adresse: formData.client_adresse,
+            telephone: formData.client_telephone
+          },
+          medecin: formData.medecin_id ? 
+            medecins.find(m => m.id === parseInt(formData.medecin_id)) || ord.medecin :
+            ord.medecin,
+          total_medicaments: medicaments.length,
+          lignes: medicaments,
+          _isOptimistic: true,
+          _isLoading: true
+        } : ord
+      ));
+
+      // Fermer le modal immédiatement
       setShowEditModal(false);
       resetForm();
       
       notifications.showInfo('Modification en cours...');
 
-      const response = await updateOrdonnance(editingId, ordonnanceData);
-      
-      if (response.success) {
-        notifications.showSuccess(
-          `Ordonnance ${response.data.numero_ordonnance} modifiée avec succès (${medicaments.length} médicament(s))`
-        );
-      } else {
-        throw new Error(response.message || 'Erreur lors de la modification');
+      try {
+        const response = await ordonnanceService.updateOrdonnance(editingId, ordonnanceData);
+        
+        if (response.success) {
+          // Confirmer la mise à jour
+          const updatedOrdonnance = {
+            ...response.data,
+            total_medicaments: response.data.lignes?.length || medicaments.length,
+            _isOptimistic: false,
+            _isLoading: false
+          };
+          
+          setAllOrdonnances(prev => prev.map(ord => 
+            ord.id === editingId ? updatedOrdonnance : ord
+          ));
+          
+          // NOTIFICATION DE SUCCÈS avec détails
+          notifications.showSuccess(
+            `Ordonnance ${response.data.numero_ordonnance} modifiée avec succès (${updatedOrdonnance.total_medicaments} médicament(s))`
+          );
+          
+          // ÉVÉNEMENTS pour synchronisation
+          eventBus.emit(EVENTS.ORDONNANCE_UPDATED, { 
+            id: editingId, 
+            data: response.data 
+          });
+        }
+      } catch (apiError) {
+        // Rollback
+        if (currentOrdonnance) {
+          setAllOrdonnances(prev => prev.map(ord => 
+            ord.id === editingId ? currentOrdonnance : ord
+          ));
+        }
+        setError('Erreur lors de la modification: ' + apiError.message);
+        notifications.showError('Erreur lors de la modification: ' + apiError.message);
+        
+        // Rouvrir le modal en cas d'erreur
+        setShowEditModal(true);
       }
     } catch (err) {
       setError('Erreur lors de la modification: ' + err.message);
       notifications.showError('Erreur lors de la modification: ' + err.message);
-      setShowEditModal(true);
     }
-  }, [formData, medicaments, editingId, resetForm, notifications, updateOrdonnance]);
+  }, [formData, medicaments, clientExistant, editingId, resetForm, notifications, allOrdonnances, medecins]);
 
-  // Supprimer une ordonnance avec DataContext
+  // Supprimer une ordonnance avec mise à jour optimiste
   const handleDelete = async (ordonnance) => {
+    // CONFIRMATION avec détails
     const confirmDelete = confirm(
       `Supprimer l'ordonnance ${ordonnance.numero_ordonnance} ?\n` +
       `Cette ordonnance contient ${ordonnance.total_medicaments} médicament(s)\n` +
@@ -828,19 +949,30 @@ const Ordonnances = () => {
     );
     if (!confirmDelete) return;
 
+    // SUPPRESSION OPTIMISTE - Retirer immédiatement de la liste
+    const originalOrdonnances = [...allOrdonnances];
+    setAllOrdonnances(prev => prev.filter(ord => ord.id !== ordonnance.id));
+    
     notifications.showInfo('Suppression en cours...');
 
     try {
-      const response = await deleteOrdonnance(ordonnance.id);
+      const response = await ordonnanceService.deleteOrdonnance(ordonnance.id);
       
       if (response.success) {
+        // NOTIFICATION DE SUCCÈS avec détails
         notifications.showSuccess(
           `Ordonnance ${ordonnance.numero_ordonnance} supprimée avec succès`
         );
-      } else {
-        throw new Error(response.message || 'Erreur lors de la suppression');
+        
+        // ÉVÉNEMENTS pour synchronisation
+        eventBus.emit(EVENTS.ORDONNANCE_DELETED, { 
+          id: ordonnance.id,
+          deletedData: ordonnance
+        });
       }
     } catch (err) {
+      // Rollback : restaurer la liste
+      setAllOrdonnances(originalOrdonnances);
       setError('Erreur lors de la suppression: ' + err.message);
       notifications.showError('Erreur lors de la suppression: ' + err.message);
     }
@@ -849,10 +981,11 @@ const Ordonnances = () => {
   // Voir les détails d'une ordonnance
   const handleViewDetails = async (ordonnance) => {
     try {
-      // Pour l'instant, utiliser l'ordonnance existante
-      // Dans une vraie implémentation, on appellerait getOrdonnance du DataContext
-      setSelectedOrdonnance(ordonnance);
-      setShowDetailModal(true);
+      const response = await ordonnanceService.getOrdonnance(ordonnance.id);
+      if (response.success) {
+        setSelectedOrdonnance(response.data);
+        setShowDetailModal(true);
+      }
     } catch (err) {
       setError('Erreur lors du chargement: ' + err.message);
       notifications.showError('Erreur lors du chargement: ' + err.message);
@@ -862,48 +995,50 @@ const Ordonnances = () => {
   // Préparer l'édition d'une ordonnance
   const handleEditOrdonnance = async (ordonnance) => {
     try {
-      // Utiliser les données de l'ordonnance pour préparer l'édition
-      setFormData({
-        numero_ordonnance: ordonnance.numero_ordonnance,
-        medecin_id: ordonnance.medecin_id || ordonnance.medecin?.id,
-        date: ordonnance.date,
-        client_nom_complet: ordonnance.client?.nom_complet || '',
-        client_adresse: ordonnance.client?.adresse || '',
-        client_telephone: ordonnance.client?.telephone || '',
-        code_ticket: ''
-      });
+      const response = await ordonnanceService.getOrdonnance(ordonnance.id);
+      if (response.success) {
+        const ordonnanceData = response.data;
+        
+        setFormData({
+          numero_ordonnance: ordonnanceData.numero_ordonnance,
+          medecin_id: ordonnanceData.medecin_id,
+          date: ordonnanceData.date,
+          client_nom_complet: ordonnanceData.client?.nom_complet || '',
+          client_adresse: ordonnanceData.client?.adresse || '',
+          client_telephone: ordonnanceData.client?.telephone || '',
+          code_ticket: ''
+        });
 
-      setMedicaments(ordonnance.lignes?.map(ligne => ({
-        id: ligne.id,
-        code_medicament: ligne.code_medicament,
-        designation: ligne.designation,
-        quantite: ligne.quantite,
-        posologie: ligne.posologie,
-        duree: ligne.duree
-      })) || []);
+        setMedicaments(ordonnanceData.lignes?.map(ligne => ({
+          id: ligne.id,
+          code_medicament: ligne.code_medicament,
+          designation: ligne.designation,
+          quantite: ligne.quantite,
+          posologie: ligne.posologie,
+          duree: ligne.duree
+        })) || []);
 
-      setClientExistant(ordonnance.client);
-      setIsEditing(true);
-      setEditingId(ordonnance.id);
-      setShowDetailModal(false);
-      setShowEditModal(true);
+        setClientExistant(ordonnanceData.client);
+        setIsEditing(true);
+        setEditingId(ordonnanceData.id);
+        setShowDetailModal(false);
+        setShowEditModal(true);
+      }
     } catch (err) {
       setError('Erreur lors du chargement de l\'ordonnance: ' + err.message);
       alert('Erreur lors du chargement de l\'ordonnance: ' + err.message);
     }
   };
 
-  // Fonctions d'impression avec DataContext
+  // Fonctions d'impression
   const handlePrintOrdonnance = async (ordonnance) => {
     setPrintingOrdonnance(ordonnance.id);
     showInfo('Préparation de l\'impression...');
 
     try {
-      const result = await printOrdonnance(ordonnance.id);
+      const result = await ordonnanceService.printOrdonnance(ordonnance.id);
       if (result.success) {
         showSuccess(`Ordonnance ${ordonnance.numero_ordonnance} envoyée à l'imprimante`);
-      } else {
-        throw new Error(result.message || 'Erreur lors de l\'impression');
       }
     } catch (error) {
       console.error('Erreur impression:', error);
@@ -918,14 +1053,12 @@ const Ordonnances = () => {
     showInfo('Génération du PDF...');
 
     try {
-      const result = await downloadPdfOrdonnance(
+      const result = await ordonnanceService.downloadPdfOrdonnance(
         ordonnance.id, 
         ordonnance.numero_ordonnance
       );
       if (result.success) {
         showSuccess(`PDF de l'ordonnance ${ordonnance.numero_ordonnance} téléchargé`);
-      } else {
-        throw new Error(result.message || 'Erreur lors du téléchargement');
       }
     } catch (error) {
       console.error('Erreur téléchargement PDF:', error);
@@ -940,12 +1073,9 @@ const Ordonnances = () => {
     showInfo('Impression directe en cours...');
 
     try {
-      // Simulation d'impression directe
-      const result = await printOrdonnance(ordonnance.id);
+      const result = await ordonnanceService.printOrdonnanceDirectly(ordonnance.id);
       if (result.success) {
         showSuccess(`Impression directe de l'ordonnance ${ordonnance.numero_ordonnance} lancée`);
-      } else {
-        throw new Error(result.message || 'Erreur lors de l\'impression directe');
       }
     } catch (error) {
       console.error('Erreur impression directe:', error);
@@ -1002,7 +1132,7 @@ const Ordonnances = () => {
         </div>
         <h2 className="text-2xl font-bold text-gray-900 font-serif">Gestion des Ordonnances</h2>
         <div className="flex space-x-2">
-          {/* RECHERCHE INSTANTANÉE */}
+          {/* OPTIMISATION 2: RECHERCHE INSTANTANÉE */}
           <div className="relative">
             <input
               type="text"
@@ -1046,15 +1176,15 @@ const Ordonnances = () => {
       )}
 
       {/* Message d'erreur global */}
-      {(error || contextErrors.ordonnances) && (
+      {error && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg">
-          {error || contextErrors.ordonnances}
+          {error}
         </div>
       )}
 
       {/* Contenu avec blur */}
       <div className={`${(showAddModal || showEditModal || showAddMedecinModal) ? 'blur-sm opacity-60 pointer-events-none' : ''}`}>
-        {(loading || contextLoading.ordonnances) ? (
+        {loading ? (
           <div className="text-center py-12">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-gray-600">Chargement des ordonnances...</p>
@@ -1145,7 +1275,7 @@ const Ordonnances = () => {
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                             ordonnance._isOptimistic ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
                           }`}>
-                            {ordonnance.total_medicaments || ordonnance.lignes?.length || 0} médicament(s)
+                            {ordonnance.total_medicaments || 0} médicament(s)
                           </span>
                         </td>
                         <td className="px-4 py-2 whitespace-nowrap">
@@ -1391,7 +1521,7 @@ const Ordonnances = () => {
                         </thead>
                         <tbody>
                           {selectedOrdonnance.lignes?.map((ligne, index) => (
-                            <tr key={ligne.id || index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                            <tr key={ligne.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                               <td className="px-4 py-3 text-sm border-b">
                                 <strong>{ligne.designation}</strong>
                               </td>

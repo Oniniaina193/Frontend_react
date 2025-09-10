@@ -224,15 +224,7 @@ const MedicamentAutocomplete = ({
         </div>
       )}
 
-      {/* Message si pas de suggestions */}
-      {showSuggestions && debouncedInputValue.length > 0 && filteredSuggestions.length === 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg p-3">
-          <div className="text-center text-gray-500 text-sm">
-            <p>Aucune suggestion trouvée pour "{debouncedInputValue}"</p>
-            <p className="text-xs mt-1">Appuyez sur Entrée pour rechercher quand même</p>
-          </div>
-        </div>
-      )}
+      
     </div>
   );
 };

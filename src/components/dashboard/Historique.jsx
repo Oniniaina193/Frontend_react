@@ -13,14 +13,14 @@ import {
   RefreshCw
 } from 'lucide-react';
 
-import ordonnanceService from '../../services/OrdonnanceService';
-import MedicamentAutocomplete from './MedicamentAutocomplete'; // Import du nouveau composant
+import { useData } from '../../contexts/DataContext';
+import MedicamentAutocomplete from './MedicamentAutocomplete';
 import { 
   PrintNotification, 
   usePrintNotifications 
 } from '../../utils/PrinterUtils';
 
-// Hook personnalisé pour le debouncing des recherches (garde l'existant)
+// ==================== HOOK DEBOUNCING ====================
 const useDebounce = (value, delay) => {
   const [debouncedValue, setDebouncedValue] = useState(value);
 
@@ -37,7 +37,7 @@ const useDebounce = (value, delay) => {
   return debouncedValue;
 };
 
-// Composant Modal de détails (garder l'existant)
+// ==================== COMPOSANT MODAL DÉTAILS ====================
 const ModalDetailsHistorique = ({ selectedOrdonnance, onClose, onPrint, onDownload }) => {
   if (!selectedOrdonnance) return null;
 
@@ -122,7 +122,7 @@ const ModalDetailsHistorique = ({ selectedOrdonnance, onClose, onPrint, onDownlo
                   </thead>
                   <tbody>
                     {selectedOrdonnance.lignes?.map((ligne, index) => (
-                      <tr key={ligne.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <tr key={ligne.id || index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <td className="px-4 py-3 text-sm border-b">
                           <strong>{ligne.designation}</strong>
                         </td>
@@ -176,9 +176,23 @@ const ModalDetailsHistorique = ({ selectedOrdonnance, onClose, onPrint, onDownlo
   );
 };
 
-// Composant principal HistoriqueOrdonnances MODIFIÉ
+// ==================== COMPOSANT PRINCIPAL HISTORIQUE ====================
 const Historique = () => {
-  // États principaux (garder les existants)
+  // ==================== HOOKS DATACONTEXT ====================
+  const {
+    ordonnances: contextOrdonnances,
+    loading: contextLoading,
+    errors: contextErrors,
+    getHistoriqueParMedicament,
+    getHistoriqueParMedicamentLibre,
+    printOrdonnance,
+    downloadPdfOrdonnance,
+    exportHistoriqueList,
+    printHistoriqueList,
+    searchMedicamentsRapide
+  } = useData();
+
+  // ==================== ÉTATS PRINCIPAUX ====================
   const [ordonnances, setOrdonnances] = useState([]);
   const [loading, setLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
@@ -186,20 +200,20 @@ const Historique = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  // États pour les filtres - MODIFIÉS
+  // ==================== ÉTATS POUR LES FILTRES ====================
   const [medicamentSelectionne, setMedicamentSelectionne] = useState('');
   const [dateFiltre, setDateFiltre] = useState('');
   const [medicamentsDisponibles, setMedicamentsDisponibles] = useState([]);
   const [loadingMedicaments, setLoadingMedicaments] = useState(false);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
 
-  // États pour la modal (garder les existants)
+  // ==================== ÉTATS POUR LA MODAL ====================
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedOrdonnance, setSelectedOrdonnance] = useState(null);
   const [totalOrdonnances, setTotalOrdonnances] = useState(0);
   const [currentDossier, setCurrentDossier] = useState('');
 
-  // Hook pour les notifications d'impression (garder existant)
+  // ==================== HOOKS NOTIFICATIONS ====================
   const { 
     notification, 
     showSuccess, 
@@ -208,14 +222,16 @@ const Historique = () => {
     hideNotification 
   } = usePrintNotifications();
 
-  // Debounce pour les recherches (garder existant)
+  // ==================== DEBOUNCE POUR LES RECHERCHES ====================
   const debouncedMedicament = useDebounce(medicamentSelectionne, 300);
   const debouncedDate = useDebounce(dateFiltre, 300);
 
-  // Fonctions existantes (garder telles quelles)
+  // ==================== FONCTIONS UTILITAIRES ====================
+  
+  // Fonction pour obtenir les informations du dossier actuel
   const getCurrentDossierInfo = useCallback(async () => {
     try {
-      const dossier = await ordonnanceService.syncCurrentDossier();
+      const dossier = 'Dossier Principal'; // Simulation
       setCurrentDossier(dossier);
       return dossier;
     } catch (error) {
@@ -225,38 +241,39 @@ const Historique = () => {
     }
   }, []);
 
-  // NOUVELLE FONCTION : Charger les suggestions de médicaments avec cache
+  // Charger les suggestions de médicaments via DataContext
   const loadSuggestionsMedicaments = useCallback(async (forceRefresh = false) => {
     setLoadingSuggestions(true);
     setError('');
     
     try {
-      const verificationResult = await ordonnanceService.verifyDossierConfiguration();
+      const response = await searchMedicamentsRapide('', 100);
       
-      if (!verificationResult.success) {
-        setError(`Problème de configuration du dossier: ${verificationResult.message}`);
-        setMedicamentsDisponibles([]);
-        return;
-      }
-
-      const response = await ordonnanceService.getSuggestionsMedicaments(forceRefresh);
-      if (response.success) {
-        setMedicamentsDisponibles(response.data);
-        console.log(`✅ ${response.data.length} suggestions chargées${response.fromCache ? ' (cache)' : ''} pour le dossier: ${verificationResult.dossier}`);
+      if (response.success && response.data) {
+        const suggestions = response.data.map(med => ({
+          id: med.id,
+          designation: med.nom || med.designation,
+          code: med.code || med.id
+        }));
+        
+        setMedicamentsDisponibles(suggestions);
+        console.log(`✅ ${suggestions.length} suggestions chargées via DataContext`);
       } else {
-        setError('Aucune suggestion trouvée pour ce dossier');
+        setError('Aucune suggestion trouvée');
         setMedicamentsDisponibles([]);
       }
     } catch (err) {
       console.error('Erreur chargement suggestions:', err);
-      setError('Erreur lors du chargement des suggestions pour ce dossier');
+      setError('Erreur lors du chargement des suggestions');
       setMedicamentsDisponibles([]);
     } finally {
       setLoadingSuggestions(false);
     }
-  }, []);
+  }, [searchMedicamentsRapide]);
 
-  // FONCTION MODIFIÉE : Recherche d'historique avec médicament libre
+  // ==================== RECHERCHE D'HISTORIQUE ====================
+  
+  // Recherche d'historique avec DataContext
   const loadHistoriqueOrdonnances = useCallback(async () => {
     if (!debouncedMedicament && !debouncedDate) return;
 
@@ -264,15 +281,6 @@ const Historique = () => {
     setError('');
     
     try {
-      const dossierInfo = await ordonnanceService.verifyDossierConfiguration();
-      
-      if (!dossierInfo.success) {
-        setError(`Erreur de configuration du dossier: ${dossierInfo.message}`);
-        setOrdonnances([]);
-        setTotalOrdonnances(0);
-        return;
-      }
-
       const params = {
         page: currentPage,
         per_page: 10,
@@ -280,17 +288,16 @@ const Historique = () => {
         ...(debouncedDate && { date: debouncedDate })
       };
 
-      console.log('🔍 Recherche historique libre avec params:', params);
-      console.log('📁 Pour le dossier:', dossierInfo.dossier);
+      console.log('🔍 Recherche historique avec DataContext:', params);
 
-      const response = await ordonnanceService.getHistoriqueParMedicamentLibre(params);
+      const response = await getHistoriqueParMedicamentLibre(params);
       
       if (response.success) {
-        setOrdonnances(response.data.ordonnances);
-        setTotalPages(response.data.pagination.last_page);
+        setOrdonnances(response.data.ordonnances || []);
+        setTotalPages(response.data.pagination?.last_page || 1);
         setTotalOrdonnances(response.data.total_ordonnances || 0);
         
-        console.log(`✅ ${response.data.ordonnances.length} ordonnances trouvées (recherche libre)`);
+        console.log(`✅ ${response.data.ordonnances?.length || 0} ordonnances trouvées`);
       } else {
         setError(response.message || 'Aucune ordonnance trouvée');
         setOrdonnances([]);
@@ -301,20 +308,22 @@ const Historique = () => {
       setError(errorMessage);
       setOrdonnances([]);
       setTotalOrdonnances(0);
-      console.error('❌ Erreur historique libre:', err);
+      console.error('❌ Erreur historique:', err);
     } finally {
       setLoading(false);
     }
-  }, [currentPage, debouncedMedicament, debouncedDate]);
+  }, [currentPage, debouncedMedicament, debouncedDate, getHistoriqueParMedicamentLibre]);
 
-  // NOUVELLE FONCTION : Gestionnaire de recherche pour l'autocomplétion
+  // ==================== HANDLERS AUTOCOMPLÉTION ====================
+  
+  // Gestionnaire de recherche pour l'autocomplétion
   const handleMedicamentSearch = useCallback(async (medicament) => {
     console.log('🔍 Recherche déclenchée pour:', medicament);
     setMedicamentSelectionne(medicament);
     setCurrentPage(1);
   }, []);
 
-  // NOUVELLE FONCTION : Gestionnaire de changement de médicament
+  // Gestionnaire de changement de médicament
   const handleMedicamentChange = useCallback((medicament) => {
     setMedicamentSelectionne(medicament);
     if (!medicament.trim()) {
@@ -323,7 +332,9 @@ const Historique = () => {
     }
   }, []);
 
-  // Effets existants MODIFIÉS
+  // ==================== EFFETS ====================
+  
+  // Initialisation du composant
   useEffect(() => {
     const initializeComponent = async () => {
       await getCurrentDossierInfo();
@@ -333,7 +344,7 @@ const Historique = () => {
     initializeComponent();
   }, [getCurrentDossierInfo, loadSuggestionsMedicaments]);
 
-  // Surveiller les changements de dossier (MODIFIÉ)
+  // Surveiller les changements de dossier et les événements d'ordonnances
   useEffect(() => {
     const handleDossierChange = () => {
       resetFiltres();
@@ -351,18 +362,21 @@ const Historique = () => {
       }
     };
 
+    // Écouter les événements système
     window.addEventListener('storage', handleDossierChange);
     window.addEventListener('dossier-changed', handleDossierChange);
     window.addEventListener('ordonnance-created', handleOrdonnanceCreated);
+    window.addEventListener('stats-refresh-needed', handleOrdonnanceCreated);
     
     return () => {
       window.removeEventListener('storage', handleDossierChange);
       window.removeEventListener('dossier-changed', handleDossierChange);
       window.removeEventListener('ordonnance-created', handleOrdonnanceCreated);
+      window.removeEventListener('stats-refresh-needed', handleOrdonnanceCreated);
     };
   }, [getCurrentDossierInfo, loadSuggestionsMedicaments, medicamentSelectionne, dateFiltre, loadHistoriqueOrdonnances]);
 
-  // Rechargement avec debouncing (GARDER)
+  // Rechargement avec debouncing
   useEffect(() => {
     if (debouncedMedicament || debouncedDate) {
       setCurrentPage(1);
@@ -373,26 +387,29 @@ const Historique = () => {
     }
   }, [currentPage, loadHistoriqueOrdonnances, debouncedMedicament, debouncedDate]);
 
+  // ==================== GESTION DES DÉTAILS ====================
+  
   // Voir les détails d'une ordonnance
   const handleViewDetails = async (ordonnance) => {
     try {
-      const response = await ordonnanceService.getOrdonnance(ordonnance.id);
-      if (response.success) {
-        setSelectedOrdonnance(response.data);
-        setShowDetailModal(true);
-      } else {
-        setError('Impossible de charger les détails de l\'ordonnance');
-      }
+      setSelectedOrdonnance(ordonnance);
+      setShowDetailModal(true);
     } catch (err) {
       setError('Erreur lors du chargement: ' + err.message);
     }
   };
 
+  // ==================== FONCTIONS D'IMPRESSION ====================
+  
   const handlePrintOrdonnance = async (ordonnance) => {
     try {
       showInfo('Lancement de l\'impression...');
-      await ordonnanceService.printOrdonnance(ordonnance.id);
-      showSuccess('Impression lancée avec succès');
+      const result = await printOrdonnance(ordonnance.id);
+      if (result.success) {
+        showSuccess('Impression lancée avec succès');
+      } else {
+        throw new Error(result.message || 'Erreur lors de l\'impression');
+      }
     } catch (error) {
       showError(`Erreur impression: ${error.message}`);
     }
@@ -401,13 +418,19 @@ const Historique = () => {
   const handleDownloadOrdonnance = async (ordonnance) => {
     try {
       showInfo('Génération du PDF...');
-      await ordonnanceService.downloadPdfOrdonnance(ordonnance.id, ordonnance.numero_ordonnance);
-      showSuccess('PDF téléchargé avec succès');
+      const result = await downloadPdfOrdonnance(ordonnance.id, ordonnance.numero_ordonnance);
+      if (result.success) {
+        showSuccess('PDF téléchargé avec succès');
+      } else {
+        throw new Error(result.message || 'Erreur lors du téléchargement');
+      }
     } catch (error) {
       showError(`Erreur téléchargement: ${error.message}`);
     }
   };
 
+  // ==================== FONCTIONS D'EXPORT ====================
+  
   // Générer le titre pour les exports
   const generateExportTitle = useMemo(() => {
     const parts = ['Ordonnances'];
@@ -429,7 +452,7 @@ const Historique = () => {
     return parts.join(' ');
   }, [debouncedMedicament, debouncedDate, currentDossier, medicamentsDisponibles]);
 
-  // Exporter la liste en PDF
+  // Exporter la liste en PDF avec DataContext
   const handleExportListPDF = async () => {
     if (ordonnances.length === 0) {
       showError('Aucune ordonnance à exporter');
@@ -447,8 +470,12 @@ const Historique = () => {
         format: 'pdf'
       };
       
-      await ordonnanceService.exportHistoriqueList(params);
-      showSuccess('Export PDF généré avec succès');
+      const result = await exportHistoriqueList(params);
+      if (result.success) {
+        showSuccess('Export PDF généré avec succès');
+      } else {
+        throw new Error(result.message || 'Erreur lors de l\'export');
+      }
     } catch (error) {
       showError(`Erreur export: ${error.message}`);
     } finally {
@@ -456,7 +483,7 @@ const Historique = () => {
     }
   };
 
-  // Imprimer la liste
+  // Imprimer la liste avec DataContext
   const handlePrintList = async () => {
     if (ordonnances.length === 0) {
       showError('Aucune ordonnance à imprimer');
@@ -473,8 +500,12 @@ const Historique = () => {
         titre: generateExportTitle
       };
       
-      await ordonnanceService.printHistoriqueList(params);
-      showSuccess('Impression lancée');
+      const result = await printHistoriqueList(params);
+      if (result.success) {
+        showSuccess('Impression lancée');
+      } else {
+        throw new Error(result.message || 'Erreur lors de l\'impression');
+      }
     } catch (error) {
       showError(`Erreur impression: ${error.message}`);
     } finally {
@@ -482,6 +513,8 @@ const Historique = () => {
     }
   };
 
+  // ==================== FONCTIONS UTILITAIRES ====================
+  
   const resetFiltres = () => {
     setMedicamentSelectionne('');
     setDateFiltre('');
@@ -532,6 +565,7 @@ const Historique = () => {
 
   const peutRechercher = debouncedMedicament || debouncedDate;
 
+  // ==================== RENDU PRINCIPAL ====================
   return (
     <div className="space-y-6 relative">
       {/* Notifications d'impression */}
@@ -542,15 +576,14 @@ const Historique = () => {
         onClose={hideNotification}
       />
 
-      {/* Header MODIFIÉ */}
+      {/* ==================== HEADER ==================== */}
       <div className="flex justify-between items-center">
         <div></div>
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 font-serif">Historique des Ordonnances</h2>
         </div>
-        {/* NOUVELLE section : Boutons d'action à droite */}
         <div className="flex space-x-2 items-center">
-          {/* Boutons d'export (déplacés ici) */}
+          {/* Boutons d'export */}
           {peutRechercher && ordonnances.length > 0 && (
             <>
               <button
@@ -574,7 +607,7 @@ const Historique = () => {
             </>
           )}
           
-          {/* Bouton réinitialiser (icône seulement) */}
+          {/* Bouton réinitialiser */}
           <button
             onClick={resetFiltres}
             className="text-gray-500 hover:text-gray-700 p-2 rounded transition-colors"
@@ -594,7 +627,7 @@ const Historique = () => {
         </div>
       </div>
 
-      {/* Résumé des résultats (NOUVEAU) */}
+      {/* ==================== RÉSUMÉ DES RÉSULTATS ==================== */}
       {peutRechercher && ordonnances.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
           <div className="text-sm text-blue-800 font-medium">
@@ -603,7 +636,7 @@ const Historique = () => {
         </div>
       )}
 
-      {/* Filtres MODIFIÉS - Labels inline */}
+      {/* ==================== FILTRES ==================== */}
       <div className="bg-white p-4 rounded-lg shadow">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
           
@@ -645,11 +678,11 @@ const Historique = () => {
         </div>
       </div>
 
-      {/* Message d'erreur */}
-      {error && (
+      {/* ==================== MESSAGE D'ERREUR ==================== */}
+      {(error || contextErrors.ordonnances) && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg">
           <div className="flex justify-between items-center">
-            <span>{error}</span>
+            <span>{error || contextErrors.ordonnances}</span>
             <button 
               onClick={() => setError('')}
               className="text-red-500 hover:text-red-700"
@@ -660,19 +693,22 @@ const Historique = () => {
         </div>
       )}
 
-      {/* Contenu principal */}
+      {/* ==================== CONTENU PRINCIPAL ==================== */}
       <div className={`${showDetailModal ? 'blur-sm opacity-60 pointer-events-none' : ''}`}>
         {!peutRechercher ? (
+          // État initial - pas de critères de recherche
           <div className="text-center py-12">
             <Filter className="w-16 h-16 text-gray-300 mb-4 mx-auto" />
             <p className="text-gray-500">Sélectionnez un médicament et/ou une date pour voir l'historique des ordonnances</p>
           </div>
-        ) : loading ? (
+        ) : (loading || contextLoading.ordonnances) ? (
+          // État de chargement
           <div className="text-center py-12">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-gray-600">Chargement de l'historique...</p>
           </div>
         ) : ordonnances.length === 0 ? (
+          // Aucun résultat
           <div className="text-center py-12">
             <FileText className="w-16 h-16 text-gray-300 mb-4 mx-auto" />
             <p className="text-gray-500">Aucune ordonnance trouvée avec ces critères</p>
@@ -684,7 +720,7 @@ const Historique = () => {
           </div>
         ) : (
           <>
-            {/* Tableau des résultats MODIFIÉ - Actions simplifiées */}
+            {/* ==================== TABLEAU DES RÉSULTATS ==================== */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -734,7 +770,6 @@ const Historique = () => {
                             {ordonnance.numero_ordonnance}
                           </div>
                         </td>
-                        {/* MODIFIÉ : Seulement le bouton Détails */}
                         <td className="px-4 py-2 whitespace-nowrap text-center">
                           <button
                             onClick={() => handleViewDetails(ordonnance)}
@@ -752,7 +787,7 @@ const Historique = () => {
               </div>
             </div>
 
-            {/* Pagination */}
+            {/* ==================== PAGINATION ==================== */}
             {totalPages > 1 && (
               <div className="flex justify-center items-center space-x-2 mt-4">
                 <button
@@ -798,7 +833,7 @@ const Historique = () => {
         )}
       </div>
 
-      {/* Modal de détail */}
+      {/* ==================== MODAL DE DÉTAIL ==================== */}
       {showDetailModal && selectedOrdonnance && (
         <ModalDetailsHistorique 
           selectedOrdonnance={selectedOrdonnance}
