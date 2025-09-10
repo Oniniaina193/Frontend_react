@@ -873,6 +873,16 @@ export const DataProvider = ({ children }) => {
     }
   };
 
+  const getSuggestionsMedicaments = useCallback(async (forceRefresh = false) => {
+  try {
+    // Utiliser la méthode du service qui récupère les médicaments avec ordonnances
+    return await ordonnanceService.getSuggestionsMedicaments(forceRefresh);
+  } catch (error) {
+    console.error('Erreur getSuggestionsMedicaments:', error);
+    return { success: false, data: [], message: error.message };
+  }
+}, []);
+
   // ==================== MÉTHODES STATISTIQUES ====================
 
   const refreshStatistiques = useCallback(async (force = false) => {
@@ -1008,6 +1018,8 @@ export const DataProvider = ({ children }) => {
     loading,
     errors,
     initialDataLoaded,
+
+    getSuggestionsMedicaments,
     
     // Fonction principale de chargement
     loadEssentialDataAfterFolder,

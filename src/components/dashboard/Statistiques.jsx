@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { useData } from '../../contexts/DataContext';
+import eventBus, { EVENTS } from "../../utils/EventBus";
 
 const Statistiques = () => {
   const {
@@ -43,6 +44,37 @@ const Statistiques = () => {
   useEffect(() => {
     updateDisplayData();
   }, [statistiques]);
+
+  useEffect(() => {
+  // Callback pour refresh dès qu'un changement impacte les stats
+  const handleDataChanged = () => {
+    refreshStatistiques(true); // 🔄 recharge les données depuis le backend
+  };
+
+  // On écoute les événements liés aux changements
+  const offMedicamentCreated = eventBus.on(EVENTS.MEDECIN_CREATED, handleDataChanged);
+  const offMedicamentUpdated = eventBus.on(EVENTS.MEDECIN_UPDATED, handleDataChanged);
+  const offMedicamentDeleted = eventBus.on(EVENTS.MEDECIN_DELETED, handleDataChanged);
+
+  const offOrdonnanceCreated = eventBus.on(EVENTS.ORDONNANCE_CREATED, handleDataChanged);
+  const offOrdonnanceUpdated = eventBus.on(EVENTS.ORDONNANCE_UPDATED, handleDataChanged);
+  const offOrdonnanceDeleted = eventBus.on(EVENTS.ORDONNANCE_DELETED, handleDataChanged);
+
+  // Ou plus simple : un seul listener global
+  const offDataChanged = eventBus.on(EVENTS.DATA_CHANGED, handleDataChanged);
+
+  // Nettoyage à l’unmount
+  return () => {
+    offMedicamentCreated();
+    offMedicamentUpdated();
+    offMedicamentDeleted();
+    offOrdonnanceCreated();
+    offOrdonnanceUpdated();
+    offOrdonnanceDeleted();
+    offDataChanged();
+  };
+}, [refreshStatistiques]);
+
 
   // Fonction de refresh manuel
   const handleRefresh = async () => {

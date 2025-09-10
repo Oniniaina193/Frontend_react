@@ -19,6 +19,7 @@ import {
   PrintNotification, 
   usePrintNotifications 
 } from '../../utils/PrinterUtils';
+import eventBus, { EVENTS } from '../../utils/EventBus';
 
 // ==================== HOOK DEBOUNCING ====================
 const useDebounce = (value, delay) => {
@@ -189,6 +190,7 @@ const Historique = () => {
     downloadPdfOrdonnance,
     exportHistoriqueList,
     printHistoriqueList,
+    getSuggestionsMedicaments, // ✅ AJOUTER cette ligne
     searchMedicamentsRapide
   } = useData();
 
@@ -243,33 +245,43 @@ const Historique = () => {
 
   // Charger les suggestions de médicaments via DataContext
   const loadSuggestionsMedicaments = useCallback(async (forceRefresh = false) => {
-    setLoadingSuggestions(true);
-    setError('');
+  console.log('🚀 DÉBUT loadSuggestionsMedicaments'); 
+  setLoadingSuggestions(true);
+  setError('');
+  
+  try {
+    console.log('📞 Appel getSuggestionsMedicaments...'); 
     
-    try {
-      const response = await searchMedicamentsRapide('', 100);
+    // ✅ CORRECTION : Utiliser la bonne méthode du DataContext
+    // Au lieu de searchMedicamentsRapide('', 100)
+    const response = await getSuggestionsMedicaments(forceRefresh);
+    
+    console.log('📊 Réponse getSuggestionsMedicaments:', response); 
+    
+    if (response.success && response.data) {
+      const suggestions = response.data.map(med => ({
+        id: med.id,
+        designation: med.nom || med.designation || med.name || `Médicament ${med.id}`,
+        code: med.code || med.id
+      }));
       
-      if (response.success && response.data) {
-        const suggestions = response.data.map(med => ({
-          id: med.id,
-          designation: med.nom || med.designation,
-          code: med.code || med.id
-        }));
-        
-        setMedicamentsDisponibles(suggestions);
-        console.log(`✅ ${suggestions.length} suggestions chargées via DataContext`);
-      } else {
-        setError('Aucune suggestion trouvée');
-        setMedicamentsDisponibles([]);
-      }
-    } catch (err) {
-      console.error('Erreur chargement suggestions:', err);
-      setError('Erreur lors du chargement des suggestions');
+      setMedicamentsDisponibles(suggestions);
+      console.log(`✅ ${suggestions.length} suggestions chargées`);
+    } else {
+      console.log('❌ Pas de données dans la réponse');
+      setError('Aucune suggestion trouvée');
       setMedicamentsDisponibles([]);
-    } finally {
-      setLoadingSuggestions(false);
     }
-  }, [searchMedicamentsRapide]);
+  } catch (err) {
+    console.error('❌ Erreur chargement suggestions:', err);
+    setError('Erreur lors du chargement des suggestions');
+    setMedicamentsDisponibles([]);
+  } finally {
+    console.log('🏁 FIN loadSuggestionsMedicaments'); 
+    setLoadingSuggestions(false);
+  }
+}, []);
+
 
   // ==================== RECHERCHE D'HISTORIQUE ====================
   
@@ -315,28 +327,112 @@ const Historique = () => {
   }, [currentPage, debouncedMedicament, debouncedDate, getHistoriqueParMedicamentLibre]);
 
   // ==================== HANDLERS AUTOCOMPLÉTION ====================
-  
-  // Gestionnaire de recherche pour l'autocomplétion
-  const handleMedicamentSearch = useCallback(async (medicament) => {
-    console.log('🔍 Recherche déclenchée pour:', medicament);
-    setMedicamentSelectionne(medicament);
-    setCurrentPage(1);
-  }, []);
 
-  // Gestionnaire de changement de médicament
-  const handleMedicamentChange = useCallback((medicament) => {
-    setMedicamentSelectionne(medicament);
-    if (!medicament.trim()) {
+  // ✅ NOUVEAU handler pour la sélection d'un médicament dans la liste
+const handleMedicamentSelect = useCallback(async (medicament) => {
+  console.log('🔍 Médicament sélectionné dans la liste:', medicament);
+  setMedicamentSelectionne(medicament);
+  setCurrentPage(1);
+  
+  // Déclencher immédiatement la recherche quand on sélectionne dans la liste
+  try {
+    setLoading(true);
+    setError('');
+    
+    const params = {
+      page: 1,
+      per_page: 10,
+      medicament_libre: medicament,
+      ...(debouncedDate && { date: debouncedDate })
+    };
+
+    console.log('🔍 Recherche immédiate après sélection:', params);
+
+    const response = await getHistoriqueParMedicamentLibre(params);
+    
+    if (response.success) {
+      setOrdonnances(response.data.ordonnances || []);
+      setTotalPages(response.data.pagination?.last_page || 1);
+      setTotalOrdonnances(response.data.total_ordonnances || 0);
+      
+      console.log(`✅ ${response.data.ordonnances?.length || 0} ordonnances trouvées`);
+    } else {
+      setError(response.message || 'Aucune ordonnance trouvée');
       setOrdonnances([]);
       setTotalOrdonnances(0);
     }
-  }, []);
+  } catch (err) {
+    const errorMessage = err.message || 'Erreur lors du chargement de l\'historique';
+    setError(errorMessage);
+    setOrdonnances([]);
+    setTotalOrdonnances(0);
+    console.error('❌ Erreur recherche après sélection:', err);
+  } finally {
+    setLoading(false);
+  }
+}, [debouncedDate, getHistoriqueParMedicamentLibre]);
+  
+  // Gestionnaire de recherche pour l'autocomplétion
+  // ✅ MODIFIER le handler de recherche (pour Entrée seulement)
+const handleMedicamentSearch = useCallback(async (medicament) => {
+  if (!medicament.trim()) return;
+  
+  console.log('🔍 Recherche déclenchée par Entrée pour:', medicament);
+  setMedicamentSelectionne(medicament);
+  setCurrentPage(1);
+  
+  // Déclencher la recherche
+  try {
+    setLoading(true);
+    setError('');
+    
+    const params = {
+      page: 1,
+      per_page: 10,
+      medicament_libre: medicament,
+      ...(debouncedDate && { date: debouncedDate })
+    };
+
+    const response = await getHistoriqueParMedicamentLibre(params);
+    
+    if (response.success) {
+      setOrdonnances(response.data.ordonnances || []);
+      setTotalPages(response.data.pagination?.last_page || 1);
+      setTotalOrdonnances(response.data.total_ordonnances || 0);
+    } else {
+      setError(response.message || 'Aucune ordonnance trouvée');
+      setOrdonnances([]);
+      setTotalOrdonnances(0);
+    }
+  } catch (err) {
+    const errorMessage = err.message || 'Erreur lors du chargement de l\'historique';
+    setError(errorMessage);
+    setOrdonnances([]);
+    setTotalOrdonnances(0);
+  } finally {
+    setLoading(false);
+  }
+}, [debouncedDate, getHistoriqueParMedicamentLibre]);
+
+ // ✅ MODIFIER le handler de changement (pour mise à jour de l'état seulement)
+const handleMedicamentChange = useCallback((medicament) => {
+  setMedicamentSelectionne(medicament);
+  
+  // Ne réinitialiser que si le champ est complètement vidé
+  if (!medicament.trim()) {
+    setOrdonnances([]);
+    setTotalOrdonnances(0);
+    setError('');
+  }
+  // Ne PAS déclencher de recherche automatique ici
+}, []);
 
   // ==================== EFFETS ====================
   
   // Initialisation du composant
   useEffect(() => {
     const initializeComponent = async () => {
+      console.log('🔧 Initialisation du composant Historique');
       await getCurrentDossierInfo();
       loadSuggestionsMedicaments();
     };
@@ -362,30 +458,43 @@ const Historique = () => {
       }
     };
 
+    
     // Écouter les événements système
     window.addEventListener('storage', handleDossierChange);
     window.addEventListener('dossier-changed', handleDossierChange);
-    window.addEventListener('ordonnance-created', handleOrdonnanceCreated);
+    eventBus.on(EVENTS.ORDONNANCE_CREATED, handleOrdonnanceCreated);
     window.addEventListener('stats-refresh-needed', handleOrdonnanceCreated);
     
     return () => {
       window.removeEventListener('storage', handleDossierChange);
       window.removeEventListener('dossier-changed', handleDossierChange);
-      window.removeEventListener('ordonnance-created', handleOrdonnanceCreated);
+      eventBus.off(EVENTS.ORDONNANCE_CREATED, handleOrdonnanceCreated);
       window.removeEventListener('stats-refresh-needed', handleOrdonnanceCreated);
     };
   }, [getCurrentDossierInfo, loadSuggestionsMedicaments, medicamentSelectionne, dateFiltre, loadHistoriqueOrdonnances]);
 
   // Rechargement avec debouncing
-  useEffect(() => {
-    if (debouncedMedicament || debouncedDate) {
-      setCurrentPage(1);
-      loadHistoriqueOrdonnances();
-    } else {
-      setOrdonnances([]);
-      setTotalOrdonnances(0);
-    }
-  }, [currentPage, loadHistoriqueOrdonnances, debouncedMedicament, debouncedDate]);
+
+  //useEffect pour la pagination seulement (sans déclencher automatiquement la recherche)
+useEffect(() => {
+  // Ne recharger que si on a déjà des critères de recherche ET qu'on change de page
+  if ((debouncedMedicament || debouncedDate) && ordonnances.length > 0) {
+    loadHistoriqueOrdonnances();
+  }
+}, [currentPage]);
+
+// useEffect pour surveiller les changements de date uniquement
+useEffect(() => {
+  if (debouncedDate && !debouncedMedicament) {
+    // Si on a une date mais pas de médicament, rechercher automatiquement
+    setCurrentPage(1);
+    loadHistoriqueOrdonnances();
+  } else if (!debouncedDate && !debouncedMedicament) {
+    // Réinitialiser si aucun critère
+    setOrdonnances([]);
+    setTotalOrdonnances(0);
+  }
+}, [debouncedDate]);
 
   // ==================== GESTION DES DÉTAILS ====================
   
@@ -647,13 +756,14 @@ const Historique = () => {
             </label>
             <div className="flex-1">
               <MedicamentAutocomplete
-                value={medicamentSelectionne}
-                onChange={handleMedicamentChange}
-                onSearch={handleMedicamentSearch}
-                suggestions={medicamentsDisponibles}
-                loading={loadingSuggestions}
-                placeholder="Saisissez le nom d'un médicament..."
-              />
+  value={medicamentSelectionne}
+  onChange={handleMedicamentChange}        // Pour les changements de saisie
+  onSearch={handleMedicamentSearch}        // Pour la recherche par Entrée
+  onSelect={handleMedicamentSelect}        // NOUVEAU: Pour la sélection dans la liste
+  suggestions={medicamentsDisponibles}
+  loading={loadingSuggestions}
+  placeholder="Saisissez le nom d'un médicament..."
+/>
               {loadingSuggestions && (
                 <p className="text-xs text-gray-500 mt-1">Chargement des suggestions...</p>
               )}

@@ -22,6 +22,7 @@ const useDebounce = (value, delay) => {
 const MedicamentAutocomplete = ({ 
   value, 
   onChange, 
+  onSelect,  // NOUVEAU: Fonction appelée quand on sélectionne dans la liste
   onSearch, // Fonction appelée quand on appuie sur Entrée
   placeholder = "Saisissez le nom d'un médicament...",
   suggestions = [],
@@ -50,8 +51,8 @@ const MedicamentAutocomplete = ({
 
   // Filtrer les suggestions en fonction de la saisie
   const filteredSuggestions = suggestions.filter(suggestion =>
-    suggestion.designation.toLowerCase().includes(debouncedInputValue.toLowerCase())
-  ).slice(0, 10); // Limiter à 10 suggestions
+  suggestion.designation.toLowerCase().includes(debouncedInputValue.toLowerCase())
+).slice(0, 10); // Limiter à 10 suggestions
 
   // Gérer les changements d'input
   const handleInputChange = (e) => {
@@ -70,12 +71,20 @@ const MedicamentAutocomplete = ({
     onChange(newValue);
   };
 
-  // Gérer la sélection d'une suggestion
+  // ✅ NOUVELLE VERSION :
   const handleSuggestionClick = (suggestion) => {
     setInputValue(suggestion.designation);
     setShowSuggestions(false);
     setSelectedIndex(-1);
+    
+    // Appeler onChange pour mettre à jour l'état local
     onChange(suggestion.designation);
+    
+    // Appeler onSelect pour déclencher la recherche immédiatement
+    if (onSelect) {
+      onSelect(suggestion.designation);
+    }
+    
     inputRef.current?.focus();
   };
 
@@ -103,8 +112,10 @@ const MedicamentAutocomplete = ({
         // Sélectionner la suggestion mise en surbrillance
         handleSuggestionClick(filteredSuggestions[selectedIndex]);
       } else {
-        // Lancer la recherche
-        handleSearch();
+        // Lancer la recherche seulement si onSearch existe
+        if (onSearch) {
+          handleSearch();
+        }
       }
       return;
     }
@@ -223,8 +234,6 @@ const MedicamentAutocomplete = ({
           </div>
         </div>
       )}
-
-      
     </div>
   );
 };

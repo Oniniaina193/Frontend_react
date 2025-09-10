@@ -459,38 +459,51 @@ class OrdonnanceService {
   }
 
   // Historique par médicament
-  async getHistoriqueParMedicament(params = {}) {
-    try {
-      const paramsWithDossier = this.addDossierToParams(params);
-      
-      const queryParams = new URLSearchParams();
-      
-      if (paramsWithDossier.medicament) queryParams.append('medicament', paramsWithDossier.medicament);
-      if (paramsWithDossier.date) queryParams.append('date', paramsWithDossier.date);
-      if (paramsWithDossier.page) queryParams.append('page', paramsWithDossier.page);
-      if (paramsWithDossier.per_page) queryParams.append('per_page', paramsWithDossier.per_page);
-      queryParams.append('current_dossier_vente', paramsWithDossier.current_dossier_vente);
-
-      if (!paramsWithDossier.medicament && !paramsWithDossier.date) {
-        throw new Error('Au moins un critère de recherche est requis (médicament ou date)');
-      }
-
-      const url = `${this.baseURL}/historique${queryParams.toString() ? `?${queryParams}` : ''}`;
-      const response = await fetch(url, { 
-        method: 'GET', 
-        headers: this.getHeaders(),
-        credentials: 'include'
-      });
-      
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Erreur lors de la récupération de l\'historique');
-      
-      return data;
-    } catch (error) {
-      console.error('Erreur getHistoriqueParMedicament:', error);
-      throw error;
+ async getHistoriqueParMedicamentLibre(params = {}) {
+  try {
+    const paramsWithDossier = this.addDossierToParams(params);
+    
+    const queryParams = new URLSearchParams();
+    
+    // ✅ CORRECTION : Support de la recherche libre de médicaments (insensible à la casse)
+    if (paramsWithDossier.medicament_libre) {
+      // Convertir en minuscules pour recherche insensible à la casse
+      queryParams.append('medicament_libre', paramsWithDossier.medicament_libre.toLowerCase());
     }
+    
+    // Support de la recherche exacte (ancienne méthode)
+    if (paramsWithDossier.medicament) {
+      queryParams.append('medicament', paramsWithDossier.medicament.toLowerCase());
+    }
+    
+    if (paramsWithDossier.date) queryParams.append('date', paramsWithDossier.date);
+    if (paramsWithDossier.page) queryParams.append('page', paramsWithDossier.page);
+    if (paramsWithDossier.per_page) queryParams.append('per_page', paramsWithDossier.per_page);
+    queryParams.append('current_dossier_vente', paramsWithDossier.current_dossier_vente);
+
+    if (!paramsWithDossier.medicament_libre && !paramsWithDossier.medicament && !paramsWithDossier.date) {
+      throw new Error('Au moins un critère de recherche est requis (médicament ou date)');
+    }
+
+    const url = `${this.baseURL}/historique/libre${queryParams.toString() ? `?${queryParams}` : ''}`;
+    
+    console.log('🔍 Recherche historique libre avec URL:', url);
+    
+    const response = await fetch(url, { 
+      method: 'GET', 
+      headers: this.getHeaders(),
+      credentials: 'include'
+    });
+    
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Erreur lors de la récupération de l\'historique');
+    
+    return data;
+  } catch (error) {
+    console.error('Erreur getHistoriqueParMedicamentLibre:', error);
+    throw error;
   }
+}
 
   // Statistiques du dossier
   async getStatistiquesDossier() {
@@ -1017,8 +1030,12 @@ async searchMedicamentsRapide(query, limit = 10) {
     }
 
     const currentDossier = this.getCachedCurrentDossier();
+    
+    // ✅ CORRECTION : Convertir en minuscules pour recherche insensible à la casse
+    const searchQuery = query.trim().toLowerCase();
+    
     const url = `${this.baseURL}/medicaments/search-rapide?` +
-                `q=${encodeURIComponent(query.trim())}&` +
+                `q=${encodeURIComponent(searchQuery)}&` +
                 `limit=${limit}&` +
                 `current_dossier_vente=${encodeURIComponent(currentDossier)}`;
 
