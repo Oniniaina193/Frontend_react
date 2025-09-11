@@ -33,13 +33,6 @@ const DashboardAdmin = () => {
       ref: statistiquesRef
     },
     {
-      key: 'medicaments',
-      label: 'Médicaments',
-      icon: Package,
-      component: Medicaments,
-      ref: medicamentsRef
-    },
-    {
       key: 'medecins',
       label: 'Médecins',
       icon: Users,
