@@ -204,10 +204,13 @@ const Historique = () => {
 
   // ==================== ÉTATS POUR LES FILTRES ====================
   const [medicamentSelectionne, setMedicamentSelectionne] = useState('');
-  const [dateFiltre, setDateFiltre] = useState('');
+  // Remplacer dateFiltre par moisFiltre et anneeFiltre
+  const [moisFiltre, setMoisFiltre] = useState('');
+  const [anneeFiltre, setAnneeFiltre] = useState(new Date().getFullYear().toString());
   const [medicamentsDisponibles, setMedicamentsDisponibles] = useState([]);
   const [loadingMedicaments, setLoadingMedicaments] = useState(false);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+ 
 
   // ==================== ÉTATS POUR LA MODAL ====================
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -226,10 +229,20 @@ const Historique = () => {
 
   // ==================== DEBOUNCE POUR LES RECHERCHES ====================
   const debouncedMedicament = useDebounce(medicamentSelectionne, 300);
-  const debouncedDate = useDebounce(dateFiltre, 300);
+  const debouncedMois = useDebounce(moisFiltre, 300);
+  const debouncedAnnee = useDebounce(anneeFiltre, 300);
 
   // ==================== FONCTIONS UTILITAIRES ====================
   
+  // Fonction pour convertir mois/année en format date pour l'API
+  const getDateFilterForAPI = useMemo(() => {
+    if (!debouncedMois || !debouncedAnnee) return '';
+    
+    // Format YYYY-MM pour l'API (premier jour du mois)
+    const moisFormate = debouncedMois.padStart(2, '0');
+    return `${debouncedAnnee}-${moisFormate}-01`;
+  }, [debouncedMois, debouncedAnnee]);
+
   // Fonction pour obtenir les informations du dossier actuel
   const getCurrentDossierInfo = useCallback(async () => {
     try {
@@ -282,9 +295,9 @@ const Historique = () => {
 
   // ==================== RECHERCHE D'HISTORIQUE ====================
   
-  // Recherche d'historique avec DataContext
+  // Recherche d'historique avec DataContext (modifiée pour utiliser le filtre mois/année)
   const loadHistoriqueOrdonnances = useCallback(async () => {
-    if (!debouncedMedicament && !debouncedDate) return;
+    if (!debouncedMedicament && !getDateFilterForAPI) return;
 
     setLoading(true);
     setError('');
@@ -294,7 +307,7 @@ const Historique = () => {
         page: currentPage,
         per_page: 10,
         ...(debouncedMedicament && { medicament_libre: debouncedMedicament }),
-        ...(debouncedDate && { date: debouncedDate })
+        ...(getDateFilterForAPI && { date: getDateFilterForAPI })
       };
 
       console.log('Recherche historique avec DataContext:', params);
@@ -321,7 +334,7 @@ const Historique = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, debouncedMedicament, debouncedDate, getHistoriqueParMedicamentLibre]);
+  }, [currentPage, debouncedMedicament, getDateFilterForAPI, getHistoriqueParMedicamentLibre]);
 
   // ==================== HANDLERS AUTOCOMPLÉTION ====================
 
@@ -340,7 +353,7 @@ const Historique = () => {
         page: 1,
         per_page: 10,
         medicament_libre: medicament,
-        ...(debouncedDate && { date: debouncedDate })
+        ...(getDateFilterForAPI && { date: getDateFilterForAPI })
       };
 
       console.log('Recherche immédiate après sélection:', params);
@@ -367,7 +380,7 @@ const Historique = () => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedDate, getHistoriqueParMedicamentLibre]);
+  }, [getDateFilterForAPI, getHistoriqueParMedicamentLibre]);
   
   // Gestionnaire de recherche pour l'autocomplétion
   const handleMedicamentSearch = useCallback(async (medicament) => {
@@ -386,7 +399,7 @@ const Historique = () => {
         page: 1,
         per_page: 10,
         medicament_libre: medicament,
-        ...(debouncedDate && { date: debouncedDate })
+        ...(getDateFilterForAPI && { date: getDateFilterForAPI })
       };
 
       const response = await getHistoriqueParMedicamentLibre(params);
@@ -408,7 +421,7 @@ const Historique = () => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedDate, getHistoriqueParMedicamentLibre]);
+  }, [getDateFilterForAPI, getHistoriqueParMedicamentLibre]);
 
   const handleMedicamentChange = useCallback((medicament) => {
     setMedicamentSelectionne(medicament);
@@ -448,7 +461,7 @@ const Historique = () => {
       console.log('Ordonnance créée détectée - rafraîchissement des suggestions');
       loadSuggestionsMedicaments(true);
       
-      if (medicamentSelectionne || dateFiltre) {
+      if (medicamentSelectionne || getDateFilterForAPI) {
         loadHistoriqueOrdonnances();
       }
     };
@@ -466,20 +479,20 @@ const Historique = () => {
       eventBus.off(EVENTS.ORDONNANCE_CREATED, handleOrdonnanceCreated);
       window.removeEventListener('stats-refresh-needed', handleOrdonnanceCreated);
     };
-  }, [getCurrentDossierInfo, loadSuggestionsMedicaments, medicamentSelectionne, dateFiltre, loadHistoriqueOrdonnances]);
+  }, [getCurrentDossierInfo, loadSuggestionsMedicaments, medicamentSelectionne, getDateFilterForAPI, loadHistoriqueOrdonnances]);
 
   // useEffect pour la pagination seulement (sans déclencher automatiquement la recherche)
   useEffect(() => {
     // Ne recharger que si on a déjà des critères de recherche ET qu'on change de page
-    if ((debouncedMedicament || debouncedDate) && ordonnances.length > 0) {
+    if ((debouncedMedicament || getDateFilterForAPI) && ordonnances.length > 0) {
       loadHistoriqueOrdonnances();
     }
   }, [currentPage, loadHistoriqueOrdonnances]);
 
-  // ✅ SEULE CORRECTION: useEffect pour surveiller les changements de date
+  // ✅ MODIFICATION: useEffect pour surveiller les changements de mois/année
   useEffect(() => {
-    if (debouncedDate) {
-      // Si on a une date, rechercher automatiquement (avec ou sans médicament)
+    if (getDateFilterForAPI) {
+      // Si on a un filtre de date (mois/année), rechercher automatiquement
       setCurrentPage(1);
       loadHistoriqueOrdonnances();
     } else if (!debouncedMedicament) {
@@ -487,7 +500,7 @@ const Historique = () => {
       setOrdonnances([]);
       setTotalOrdonnances(0);
     }
-  }, [debouncedDate, loadHistoriqueOrdonnances, debouncedMedicament]);
+  }, [getDateFilterForAPI, loadHistoriqueOrdonnances, debouncedMedicament]);
 
   // ==================== GESTION DES DÉTAILS ====================
   
@@ -533,7 +546,7 @@ const Historique = () => {
 
   // ==================== FONCTIONS D'EXPORT ====================
   
-  // Générer le titre pour les exports
+  // Générer le titre pour les exports (modifié pour mois/année)
   const generateExportTitle = useMemo(() => {
     const parts = ['Ordonnances'];
     
@@ -542,9 +555,13 @@ const Historique = () => {
       parts.push(`- ${medicament ? medicament.designation : debouncedMedicament}`);
     }
     
-    if (debouncedDate) {
-      const dateFormatee = new Date(debouncedDate).toLocaleDateString('fr-FR');
-      parts.push(`- ${dateFormatee}`);
+    if (getDateFilterForAPI) {
+      const moisNoms = [
+        '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+        'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+      ];
+      const moisNom = moisNoms[parseInt(debouncedMois)] || debouncedMois;
+      parts.push(`- ${moisNom} ${debouncedAnnee}`);
     }
     
     if (currentDossier && currentDossier !== 'default') {
@@ -552,7 +569,7 @@ const Historique = () => {
     }
     
     return parts.join(' ');
-  }, [debouncedMedicament, debouncedDate, currentDossier, medicamentsDisponibles]);
+  }, [debouncedMedicament, getDateFilterForAPI, debouncedMois, debouncedAnnee, currentDossier, medicamentsDisponibles]);
 
   // Exporter la liste en PDF avec DataContext
   const handleExportListPDF = async () => {
@@ -567,7 +584,7 @@ const Historique = () => {
       
       const params = {
         medicament: debouncedMedicament,
-        date: debouncedDate,
+        date: getDateFilterForAPI,
         titre: generateExportTitle,
         format: 'pdf'
       };
@@ -598,7 +615,7 @@ const Historique = () => {
       
       const params = {
         medicament: debouncedMedicament,
-        date: debouncedDate,
+        date: getDateFilterForAPI,
         titre: generateExportTitle
       };
       
@@ -619,7 +636,8 @@ const Historique = () => {
   
   const resetFiltres = () => {
     setMedicamentSelectionne('');
-    setDateFiltre('');
+    setMoisFiltre('');
+    setAnneeFiltre(new Date().getFullYear().toString()); 
     setCurrentPage(1);
     setOrdonnances([]);
     setTotalOrdonnances(0);
@@ -634,7 +652,7 @@ const Historique = () => {
       await getCurrentDossierInfo();
       await loadSuggestionsMedicaments(true);
       
-      if (debouncedMedicament || debouncedDate) {
+      if (debouncedMedicament || getDateFilterForAPI) {
         await loadHistoriqueOrdonnances();
       }
     } catch (error) {
@@ -644,28 +662,46 @@ const Historique = () => {
     }
   };
 
-  // Générer le texte de résumé des résultats
+  // Générer le texte de résumé des résultats (modifié pour mois/année)
   const getTexteSummary = () => {
-    if (!debouncedMedicament && !debouncedDate) return null;
+    if (!debouncedMedicament && !getDateFilterForAPI) return null;
 
     const dossierText = currentDossier ? ` (Dossier: ${currentDossier})` : '';
 
-    if (debouncedMedicament && debouncedDate) {
+    if (debouncedMedicament && getDateFilterForAPI) {
       const medicament = medicamentsDisponibles.find(m => m.designation === debouncedMedicament);
       const nomMedicament = medicament ? medicament.designation : debouncedMedicament;
-      const dateFormatee = new Date(debouncedDate).toLocaleDateString('fr-FR');
-      return `${totalOrdonnances} ordonnance(s) pour ${nomMedicament} le ${dateFormatee}${dossierText}`;
+      const moisNoms = [
+        '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+        'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+      ];
+      const moisNom = moisNoms[parseInt(debouncedMois)] || debouncedMois;
+      return `${totalOrdonnances} ordonnance(s) pour ${nomMedicament} en ${moisNom} ${debouncedAnnee}${dossierText}`;
     } else if (debouncedMedicament) {
       const medicament = medicamentsDisponibles.find(m => m.designation === debouncedMedicament);
       const nomMedicament = medicament ? medicament.designation : debouncedMedicament;
       return `${totalOrdonnances} ordonnance(s) pour ${nomMedicament}${dossierText}`;
-    } else if (debouncedDate) {
-      const dateFormatee = new Date(debouncedDate).toLocaleDateString('fr-FR');
-      return `${totalOrdonnances} ordonnance(s) enregistrée(s) le ${dateFormatee}${dossierText}`;
+    } else if (getDateFilterForAPI) {
+      const moisNoms = [
+        '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+        'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+      ];
+      const moisNom = moisNoms[parseInt(debouncedMois)] || debouncedMois;
+      return `${totalOrdonnances} ordonnance(s) enregistrée(s) en ${moisNom} ${debouncedAnnee}${dossierText}`;
     }
   };
 
-  const peutRechercher = debouncedMedicament || debouncedDate;
+  const peutRechercher = debouncedMedicament || getDateFilterForAPI;
+
+  // Générer les années disponibles (de l'année actuelle - 10 à l'année actuelle + 1)
+  const generateYears = () => {
+    const currentYear = new Date().getFullYear();
+    const years = [];
+    for (let year = currentYear - 10; year <= currentYear + 1; year++) {
+      years.push(year);
+    }
+    return years;
+  };
 
   // ==================== RENDU PRINCIPAL ====================
   return (
@@ -750,9 +786,9 @@ const Historique = () => {
             <div className="flex-1">
               <MedicamentAutocomplete
                 value={medicamentSelectionne}
-                onChange={handleMedicamentChange}        // Pour les changements de saisie
-                onSearch={handleMedicamentSearch}        // Pour la recherche par Entrée
-                onSelect={handleMedicamentSelect}        // Pour la sélection dans la liste
+                onChange={handleMedicamentChange}        
+                onSearch={handleMedicamentSearch}        
+                onSelect={handleMedicamentSelect}        
                 suggestions={medicamentsDisponibles}
                 loading={loadingSuggestions}
                 placeholder="Saisissez le nom d'un médicament..."
@@ -763,20 +799,50 @@ const Historique = () => {
             </div>
           </div>
 
-          {/* Filtre par date */}
+          {/* Filtre par mois et année */}
           <div className="flex items-center space-x-3">
             <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
-              Date :
+              Période :
             </label>
-            <input
-              type="date"
-              value={dateFiltre}
-              onChange={(e) => {
-                setDateFiltre(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-            />
+            <div className="flex-1 flex space-x-2">
+              {/* Sélecteur de mois */}
+              <select
+                value={moisFiltre}
+                onChange={(e) => {
+                  setMoisFiltre(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Mois</option>
+                <option value="1">Janvier</option>
+                <option value="2">Février</option>
+                <option value="3">Mars</option>
+                <option value="4">Avril</option>
+                <option value="5">Mai</option>
+                <option value="6">Juin</option>
+                <option value="7">Juillet</option>
+                <option value="8">Août</option>
+                <option value="9">Septembre</option>
+                <option value="10">Octobre</option>
+                <option value="11">Novembre</option>
+                <option value="12">Décembre</option>
+              </select>
+              
+              {/* Sélecteur d'année */}
+              <input
+  type="number"
+  value={anneeFiltre}
+  onChange={(e) => {
+    setAnneeFiltre(e.target.value);
+    setCurrentPage(1);
+  }}
+  placeholder="Année (ex: 2024)"
+  min="2000"
+  max="2099"
+  className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+/>
+            </div>
           </div>
         </div>
       </div>
@@ -802,7 +868,7 @@ const Historique = () => {
           // État initial - pas de critères de recherche
           <div className="text-center py-12">
             <Filter className="w-16 h-16 text-gray-300 mb-4 mx-auto" />
-            <p className="text-gray-500">Sélectionnez un médicament et/ou une date pour voir l'historique des ordonnances</p>
+            <p className="text-gray-500">Sélectionnez un médicament et/ou une période pour voir l'historique des ordonnances</p>
           </div>
         ) : (loading || contextLoading.ordonnances) ? (
           // État de chargement
@@ -830,7 +896,10 @@ const Historique = () => {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Nom Client
+                        Nom Patient
+                      </th>
+                      <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Médecin
                       </th>
                       <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Nom Médicament
@@ -848,43 +917,48 @@ const Historique = () => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {ordonnances.map((ordonnance) => (
-                      <tr key={ordonnance.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-2">
-                          <div className="flex items-center justify-center">
-                            <div className="text-center">
-                              <div className="text-sm font-medium text-gray-900">
-                                {ordonnance.client?.nom_complet}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-2 text-center">
-                          <div className="text-sm font-medium text-gray-900">
-                            {ordonnance.medicament_principal || debouncedMedicament || 'Divers médicaments'}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap text-center">
-                          <div className="text-sm text-gray-900">
-                            {new Date(ordonnance.date).toLocaleDateString('fr-FR')}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap text-center">
-                          <div className="text-sm text-gray-900 font-medium">
-                            {ordonnance.numero_ordonnance}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2 whitespace-nowrap text-center">
-                          <button
-                            onClick={() => handleViewDetails(ordonnance)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors text-sm font-medium flex items-center mx-auto"
-                            title="Voir détails"
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            Détails
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+  <tr key={ordonnance.id} className="hover:bg-gray-50">
+    <td className="px-4 py-2">
+      <div className="flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-sm font-medium text-gray-900">
+            {ordonnance.client?.nom_complet}
+          </div>
+        </div>
+      </div>
+    </td>
+    <td className="px-4 py-2 text-center">
+      <div className="text-sm font-medium text-gray-900">
+        Dr. {ordonnance.medecin?.nom_complet} ({ordonnance.medecin?.ONM})
+      </div>
+    </td>
+    <td className="px-4 py-2 text-center">
+      <div className="text-sm font-medium text-gray-900">
+        {ordonnance.medicament_principal || debouncedMedicament || 'Divers médicaments'}
+      </div>
+    </td>
+    <td className="px-4 py-2 whitespace-nowrap text-center">
+      <div className="text-sm text-gray-900">
+        {new Date(ordonnance.date).toLocaleDateString('fr-FR')}
+      </div>
+    </td>
+    <td className="px-4 py-2 whitespace-nowrap text-center">
+      <div className="text-sm text-gray-900 font-medium">
+        {ordonnance.numero_ordonnance}
+      </div>
+    </td>
+    <td className="px-4 py-2 whitespace-nowrap text-center">
+      <button
+        onClick={() => handleViewDetails(ordonnance)}
+        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors text-sm font-medium flex items-center mx-auto"
+        title="Voir détails"
+      >
+        <Eye className="w-4 h-4 mr-1" />
+        Détails
+      </button>
+    </td>
+  </tr>
+))}
                   </tbody>
                 </table>
               </div>

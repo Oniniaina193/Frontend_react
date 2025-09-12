@@ -34,7 +34,7 @@ import {
   PrintTestComponent 
 } from '../../utils/PrinterUtils';
 
-// Composant FormulaireOrdonnance
+// Composant FormulaireOrdonnance modifié avec recherche
 const FormulaireOrdonnance = React.memo(({ 
   isEdit = false, 
   formData, 
@@ -59,6 +59,51 @@ const FormulaireOrdonnance = React.memo(({
   onClientSelection,
   onShowAddMedecin
 }) => {
+  // États locaux pour la recherche
+  const [searchMedecin, setSearchMedecin] = useState('');
+  const [searchClient, setSearchClient] = useState('');
+  const [showMedecinSuggestions, setShowMedecinSuggestions] = useState(false);
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+  const [selectedMedecin, setSelectedMedecin] = useState(null);
+
+  // Filtrer les médecins basé sur la recherche
+  const filteredMedecins = useMemo(() => {
+    if (!searchMedecin.trim()) return medecins.slice(0, 5); // Limiter à 5 si pas de recherche
+    
+    return medecins.filter(medecin => 
+      medecin.nom_complet.toLowerCase().includes(searchMedecin.toLowerCase()) ||
+      medecin.ONM.toLowerCase().includes(searchMedecin.toLowerCase())
+    ).slice(0, 8); // Limiter à 8 résultats
+  }, [medecins, searchMedecin]);
+
+  // Filtrer les clients basé sur la recherche
+  const filteredClients = useMemo(() => {
+    if (!searchClient.trim()) return clients.slice(0, 5); // Limiter à 5 si pas de recherche
+    
+    return clients.filter(client => 
+      client.nom_complet.toLowerCase().includes(searchClient.toLowerCase()) ||
+      client.adresse?.toLowerCase().includes(searchClient.toLowerCase()) ||
+      client.telephone?.includes(searchClient.trim())
+    ).slice(0, 8); // Limiter à 8 résultats
+  }, [clients, searchClient]);
+
+  // Initialiser les champs de recherche quand les données changent
+  useEffect(() => {
+    if (formData.medecin_id && medecins.length > 0) {
+      const medecin = medecins.find(m => m.id === parseInt(formData.medecin_id));
+      if (medecin && !selectedMedecin) {
+        setSelectedMedecin(medecin);
+        setSearchMedecin(`Dr. ${medecin.nom_complet}`);
+      }
+    }
+  }, [formData.medecin_id, medecins, selectedMedecin]);
+
+  useEffect(() => {
+    if (clientExistant) {
+      setSearchClient(clientExistant.nom_complet);
+    }
+  }, [clientExistant]);
+
   // Handlers mémorisés
   const handleFormChange = useCallback((field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -78,6 +123,61 @@ const FormulaireOrdonnance = React.memo(({
       onSearchTickets(value);
     }
   }, [handleFormChange, onSearchTickets]);
+
+  // Sélection d'un médecin depuis les suggestions
+  const handleSelectMedecin = useCallback((medecin) => {
+    setSelectedMedecin(medecin);
+    setSearchMedecin(`Dr. ${medecin.nom_complet}`);
+    setFormData(prev => ({ ...prev, medecin_id: medecin.id }));
+    setShowMedecinSuggestions(false);
+  }, [setFormData]);
+
+  // Sélection d'un client depuis les suggestions
+  const handleSelectClient = useCallback((client) => {
+    setSearchClient(client.nom_complet);
+    onClientSelection(client.id);
+    setShowClientSuggestions(false);
+  }, [onClientSelection]);
+
+  // Gestion de la recherche médecin
+  const handleMedecinSearch = useCallback((value) => {
+    setSearchMedecin(value);
+    setShowMedecinSuggestions(true);
+    
+    // Si l'utilisateur efface, réinitialiser la sélection
+    if (!value.trim()) {
+      setSelectedMedecin(null);
+      setFormData(prev => ({ ...prev, medecin_id: '' }));
+    }
+    
+    // Vérifier si la valeur correspond exactement à un médecin sélectionné
+    if (selectedMedecin && value !== `Dr. ${selectedMedecin.nom_complet}`) {
+      setSelectedMedecin(null);
+      setFormData(prev => ({ ...prev, medecin_id: '' }));
+    }
+  }, [selectedMedecin, setFormData]);
+
+  // Gestion de la recherche client
+  const handleClientSearch = useCallback((value) => {
+    setSearchClient(value);
+    setShowClientSuggestions(true);
+    
+    // Si l'utilisateur efface, réinitialiser
+    if (!value.trim()) {
+      onClientSelection('');
+    }
+    
+    // Mettre à jour le nom même si pas de sélection exacte
+    setFormData(prev => ({ ...prev, client_nom_complet: value }));
+  }, [onClientSelection, setFormData]);
+
+  // Nouveau client avec les données saisies
+  const handleNouveauClient = useCallback(() => {
+    onClientSelection(''); // Déselectionner client existant
+    setShowClientSuggestions(false);
+    // Garder le nom saisi dans searchClient
+    setFormData(prev => ({ ...prev, client_nom_complet: searchClient }));
+  }, [onClientSelection, searchClient, setFormData]);
 
   return (
     <div className="bg-white p-2 space-y-4 max-h-[70vh] overflow-y-auto">
@@ -131,25 +231,71 @@ const FormulaireOrdonnance = React.memo(({
         </div>
       </div>
 
-      {/* Médecin */}
+      {/* Médecin avec recherche */}
       <div className="grid grid-cols-4 gap-4 items-center">
         <label className="text-gray-700 font-medium">Médecin préscripteur</label>
-        <div className="col-span-2">
-          <select
-            value={formData.medecin_id}
-            onChange={(e) => handleFormChange('medecin_id', e.target.value)}
+        <div className="col-span-2 relative">
+          <input
+            type="text"
+            placeholder="Tapez le nom du médecin..."
+            value={searchMedecin}
+            onChange={(e) => handleMedecinSearch(e.target.value)}
+            onFocus={() => setShowMedecinSuggestions(true)}
             disabled={loadingMedecins}
             className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100"
-          >
-            <option value="">
-              {loadingMedecins ? 'Chargement...' : 'Sélectionner un médecin...'}
-            </option>
-            {medecins.map((medecin) => (
-              <option key={medecin.id} value={medecin.id}>
-                Dr. {medecin.nom_complet} - ONM: {medecin.ONM}
-              </option>
-            ))}
-          </select>
+          />
+          
+          {/* Indicateur de médecin sélectionné */}
+          {selectedMedecin && (
+            <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+            </div>
+          )}
+          
+          {/* Suggestions de médecins */}
+          {showMedecinSuggestions && !loadingMedecins && (
+            <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded shadow-lg z-10 mt-1 max-h-60 overflow-y-auto">
+              {filteredMedecins.length > 0 ? (
+                <>
+                  {filteredMedecins.map((medecin) => (
+                    <button
+                      key={medecin.id}
+                      onClick={() => handleSelectMedecin(medecin)}
+                      className={`w-full p-3 text-left hover:bg-gray-50 border-b last:border-b-0 ${
+                        selectedMedecin?.id === medecin.id ? 'bg-blue-50 border-blue-200' : ''
+                      }`}
+                    >
+                      <div className="font-medium">Dr. {medecin.nom_complet}</div>
+                      <div className="text-sm text-gray-500">ONM: {medecin.ONM}</div>
+                      {medecin.adresse && (
+                        <div className="text-xs text-gray-400">{medecin.adresse}</div>
+                      )}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setShowMedecinSuggestions(false)}
+                    className="w-full p-2 text-center text-gray-500 text-sm hover:bg-gray-50 border-t"
+                  >
+                    Fermer les suggestions
+                  </button>
+                </>
+              ) : (
+                <div className="p-3 text-gray-500 text-sm text-center">
+                  Aucun médecin trouvé
+                  <br />
+                  <button
+                    onClick={() => {
+                      setShowMedecinSuggestions(false);
+                      onShowAddMedecin();
+                    }}
+                    className="text-blue-600 hover:text-blue-800 mt-1"
+                  >
+                    Ajouter ce médecin
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <div>
           <button
@@ -175,28 +321,76 @@ const FormulaireOrdonnance = React.memo(({
         <div></div>
       </div>
 
-      {/* Client */}
+      {/* Client avec recherche */}
       <div className="grid grid-cols-4 gap-4 items-start">
         <label className="text-gray-700 font-medium pt-2">Infos Client</label>
         <div className="col-span-3 space-y-3">
-          {/* Sélection client existant */}
-          <select
-            value={clientExistant?.id || ''}
-            onChange={(e) => onClientSelection(e.target.value)}
-            disabled={loadingClients}
-            className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100"
-          >
-            <option value="">
-              {loadingClients ? 'Chargement...' : 'Nouveau client (saisir ci-dessous)'}
-            </option>
-            {clients.map((client) => (
-              <option key={client.id} value={client.id}>
-                {client.nom_complet} 
-              </option>
-            ))}
-          </select>
+          {/* Recherche client */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Tapez le nom du client ou créez un nouveau client..."
+              value={searchClient}
+              onChange={(e) => handleClientSearch(e.target.value)}
+              onFocus={() => setShowClientSuggestions(true)}
+              disabled={loadingClients}
+              className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100"
+            />
+            
+            {/* Indicateur de client sélectionné */}
+            {clientExistant && (
+              <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              </div>
+            )}
+            
+            {/* Suggestions de clients */}
+            {showClientSuggestions && !loadingClients && (
+              <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded shadow-lg z-10 mt-1 max-h-60 overflow-y-auto">
+                {searchClient.trim() && (
+                  <button
+                    onClick={handleNouveauClient}
+                    className="w-full p-3 text-left hover:bg-green-50 border-b border-green-200 bg-green-25"
+                  >
+                    <div className="font-medium text-green-700">+ Nouveau client</div>
+                    <div className="text-sm text-green-600">"{searchClient}"</div>
+                  </button>
+                )}
+                
+                {filteredClients.length > 0 ? (
+                  <>
+                    {filteredClients.map((client) => (
+                      <button
+                        key={client.id}
+                        onClick={() => handleSelectClient(client)}
+                        className={`w-full p-3 text-left hover:bg-gray-50 border-b last:border-b-0 ${
+                          clientExistant?.id === client.id ? 'bg-blue-50 border-blue-200' : ''
+                        }`}
+                      >
+                        <div className="font-medium">{client.nom_complet}</div>
+                        <div className="text-sm text-gray-500">{client.adresse}</div>
+                        {client.telephone && (
+                          <div className="text-xs text-gray-400">{client.telephone}</div>
+                        )}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setShowClientSuggestions(false)}
+                      className="w-full p-2 text-center text-gray-500 text-sm hover:bg-gray-50 border-t"
+                    >
+                      Fermer les suggestions
+                    </button>
+                  </>
+                ) : searchClient.trim() ? null : (
+                  <div className="p-3 text-gray-500 text-sm text-center">
+                    Commencez à taper pour voir les suggestions
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           
-          {/* Nom complet */}
+          {/* Nom complet - mis à jour automatiquement */}
           <input
             type="text"
             placeholder="Nom complet *"
@@ -335,6 +529,17 @@ const FormulaireOrdonnance = React.memo(({
           Annuler
         </button>
       </div>
+
+      {/* Clic en dehors pour fermer les suggestions */}
+      {(showMedecinSuggestions || showClientSuggestions) && (
+        <div
+          className="fixed inset-0 z-0"
+          onClick={() => {
+            setShowMedecinSuggestions(false);
+            setShowClientSuggestions(false);
+          }}
+        />
+      )}
     </div>
   );
 });
@@ -683,7 +888,7 @@ const Ordonnances = () => {
       }
 
       // CONFIRMATION avant création
-      const confirmCreate = confirm(`Créer l'ordonnance ${formData.numero_ordonnance} avec ${medicaments.length} médicament(s) ?`);
+      const confirmCreate = confirm(`Créer l'ordonnance ${formData.numero_ordonnance}?`);
       if (!confirmCreate) return;
 
       // MISE À JOUR OPTIMISTE
@@ -943,8 +1148,6 @@ const Ordonnances = () => {
     // CONFIRMATION avec détails
     const confirmDelete = confirm(
       `Supprimer l'ordonnance ${ordonnance.numero_ordonnance} ?\n` +
-      `Cette ordonnance contient ${ordonnance.total_medicaments} médicament(s)\n` +
-      `Client: ${ordonnance.client?.nom_complet}\n` +
       `Cette action est irréversible.`
     );
     if (!confirmDelete) return;

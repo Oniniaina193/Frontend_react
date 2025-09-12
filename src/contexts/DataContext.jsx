@@ -1003,6 +1003,171 @@ export const DataProvider = ({ children }) => {
     await loadEssentialDataAfterFolder();
   }, [clearCache, loadEssentialDataAfterFolder]);
 
+  // ==================== RÉCUPÉRATION DE DONNÉES ====================
+
+const getOrdonnance = useCallback(async (id) => {
+  try {
+    return await ordonnanceService.getOrdonnance(id);
+  } catch (error) {
+    console.error('Erreur getOrdonnance:', error);
+    throw error;
+  }
+}, []);
+
+const getMedecinsForSelection = useCallback(async () => {
+  try {
+    return await ordonnanceService.getMedecinsForSelection();
+  } catch (error) {
+    console.error('Erreur getMedecinsForSelection:', error);
+    throw error;
+  }
+}, []);
+
+const suggestNumeroOrdonnance = useCallback(async () => {
+  try {
+    return await ordonnanceService.suggestNumeroOrdonnance();
+  } catch (error) {
+    console.error('Erreur suggestNumeroOrdonnance:', error);
+    throw error;
+  }
+}, []);
+
+const checkNumeroUnique = useCallback(async (numero) => {
+  try {
+    return await ordonnanceService.checkNumeroUnique(numero);
+  } catch (error) {
+    console.error('Erreur checkNumeroUnique:', error);
+    throw error;
+  }
+}, []);
+
+const getMedicamentsAvecOrdonnances = useCallback(async () => {
+  try {
+    return await ordonnanceService.getMedicamentsAvecOrdonnances();
+  } catch (error) {
+    console.error('Erreur getMedicamentsAvecOrdonnances:', error);
+    throw error;
+  }
+}, []);
+
+const getStatistiquesDossier = useCallback(async () => {
+  try {
+    return await ordonnanceService.getStatistiquesDossier();
+  } catch (error) {
+    console.error('Erreur getStatistiquesDossier:', error);
+    throw error;
+  }
+}, []);
+
+// ==================== RECHERCHE DE TICKETS ====================
+
+const searchTickets = useCallback(async (query, limit = 10) => {
+  try {
+    return await ordonnanceService.searchTickets(query, limit);
+  } catch (error) {
+    console.error('Erreur searchTickets:', error);
+    throw error;
+  }
+}, []);
+
+const getTicketDetails = useCallback(async (codeTicket) => {
+  try {
+    return await ordonnanceService.getTicketDetails(codeTicket);
+  } catch (error) {
+    console.error('Erreur getTicketDetails:', error);
+    throw error;
+  }
+}, []);
+
+// ==================== UTILITAIRES DE FORMATAGE ====================
+
+const formatOrdonnanceForSubmit = useCallback((formData, medicaments, clientExistant = null) => {
+  return ordonnanceService.formatOrdonnanceForSubmit(formData, medicaments, clientExistant);
+}, []);
+
+const formatOrdonnanceForUpdate = useCallback((formData, medicaments) => {
+  return ordonnanceService.formatOrdonnanceForUpdate(formData, medicaments);
+}, []);
+
+const validateOrdonnanceData = useCallback((ordonnanceData, isUpdate = false) => {
+  return ordonnanceService.validateOrdonnanceData(ordonnanceData, isUpdate);
+}, []);
+
+// ==================== IMPRESSION AVANCÉE ====================
+
+const printOrdonnanceDirectly = useCallback(async (ordonnanceId) => {
+  try {
+    return await ordonnanceService.printOrdonnanceDirectly(ordonnanceId);
+  } catch (error) {
+    console.error('Erreur printOrdonnanceDirectly:', error);
+    throw error;
+  }
+}, []);
+
+const printHistoriqueListDirect = useCallback(async (params = {}) => {
+  try {
+    return await ordonnanceService.printHistoriqueListDirect(params);
+  } catch (error) {
+    console.error('Erreur printHistoriqueListDirect:', error);
+    throw error;
+  }
+}, []);
+
+const checkPrinterAvailability = useCallback(async () => {
+  try {
+    return await ordonnanceService.checkPrinterAvailability();
+  } catch (error) {
+    console.error('Erreur checkPrinterAvailability:', error);
+    throw error;
+  }
+}, []);
+
+// ==================== GESTION DU DOSSIER ====================
+
+const debugCurrentDossier = useCallback(async () => {
+  try {
+    return await ordonnanceService.debugCurrentDossier();
+  } catch (error) {
+    console.error('Erreur debugCurrentDossier:', error);
+    throw error;
+  }
+}, []);
+
+const syncCurrentDossier = useCallback(async () => {
+  try {
+    return await ordonnanceService.syncCurrentDossier();
+  } catch (error) {
+    console.error('Erreur syncCurrentDossier:', error);
+    throw error;
+  }
+}, []);
+
+const syncCurrentDossierSmart = useCallback(async () => {
+  try {
+    return await ordonnanceService.syncCurrentDossierSmart();
+  } catch (error) {
+    console.error('Erreur syncCurrentDossierSmart:', error);
+    throw error;
+  }
+}, []);
+
+const invalidateDossierCache = useCallback(() => {
+  ordonnanceService.invalidateDossierCache();
+}, []);
+
+const invalidateSuggestionsCache = useCallback(() => {
+  ordonnanceService.invalidateSuggestionsCache();
+}, []);
+
+const verifyDossierConfiguration = useCallback(async () => {
+  try {
+    return await ordonnanceService.verifyDossierConfiguration();
+  } catch (error) {
+    console.error('Erreur verifyDossierConfiguration:', error);
+    throw error;
+  }
+}, []);
+
   // ==================== VALEUR DU CONTEXTE ====================
 
   const contextValue = {
@@ -1067,6 +1232,36 @@ export const DataProvider = ({ children }) => {
     loadFullOrdonnances,
     clearCache,
     refreshAllData,
+
+     // Récupération de données
+  getOrdonnance,
+  getMedecinsForSelection,
+  suggestNumeroOrdonnance,
+  checkNumeroUnique,
+  getMedicamentsAvecOrdonnances,
+  getStatistiquesDossier,
+  
+  // Recherche de tickets
+  searchTickets,
+  getTicketDetails,
+  
+  // Utilitaires de formatage
+  formatOrdonnanceForSubmit,
+  formatOrdonnanceForUpdate,
+  validateOrdonnanceData,
+  
+  // Impression avancée
+  printOrdonnanceDirectly,
+  printHistoriqueListDirect,
+  checkPrinterAvailability,
+  
+  // Gestion du dossier
+  debugCurrentDossier,
+  syncCurrentDossier,
+  syncCurrentDossierSmart,
+  invalidateDossierCache,
+  invalidateSuggestionsCache,
+  verifyDossierConfiguration,
     
     // Cache stats
     cacheSize: cache.articlesSearches.size + cache.ordonnancesSearches.size,

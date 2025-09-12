@@ -3,7 +3,6 @@ import { User, ArrowLeft, Folder, RefreshCw, CheckCircle, AlertCircle, Loader } 
 import Accueil from './Accueil';
 import Consultation from './Consultation';
 import DashboardAdmin from './DashboardAdmin';
-import statistiquesService from '../../services/StatistiquesService';
 import dataRefreshService from '../../services/DatRefreshService';
 import { useData } from '../../contexts/DataContext';
 
