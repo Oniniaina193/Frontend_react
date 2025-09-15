@@ -203,14 +203,14 @@ const Historique = () => {
   const [totalPages, setTotalPages] = useState(1);
 
   // ==================== ÉTATS POUR LES FILTRES ====================
-  const [medicamentSelectionne, setMedicamentSelectionne] = useState('');
-  // Remplacer dateFiltre par moisFiltre et anneeFiltre
+  const [medicamentAffichage, setMedicamentAffichage] = useState(''); // Ce qui s'affiche dans le champ
+  const [medicamentRecherche, setMedicamentRecherche] = useState(''); // Ce qui déclenche la recherche
+  
   const [moisFiltre, setMoisFiltre] = useState('');
   const [anneeFiltre, setAnneeFiltre] = useState(new Date().getFullYear().toString());
   const [medicamentsDisponibles, setMedicamentsDisponibles] = useState([]);
   const [loadingMedicaments, setLoadingMedicaments] = useState(false);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
- 
 
   // ==================== ÉTATS POUR LA MODAL ====================
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -227,21 +227,34 @@ const Historique = () => {
     hideNotification 
   } = usePrintNotifications();
 
-  // ==================== DEBOUNCE POUR LES RECHERCHES ====================
-  const debouncedMedicament = useDebounce(medicamentSelectionne, 300);
+  // ==================== DEBOUNCE SEULEMENT POUR LES FILTRES DE DATE ====================
   const debouncedMois = useDebounce(moisFiltre, 300);
   const debouncedAnnee = useDebounce(anneeFiltre, 300);
 
   // ==================== FONCTIONS UTILITAIRES ====================
   
-  // Fonction pour convertir mois/année en format date pour l'API
-  const getDateFilterForAPI = useMemo(() => {
-    if (!debouncedMois || !debouncedAnnee) return '';
-    
-    // Format YYYY-MM pour l'API (premier jour du mois)
-    const moisFormate = debouncedMois.padStart(2, '0');
-    return `${debouncedAnnee}-${moisFormate}-01`;
-  }, [debouncedMois, debouncedAnnee]);
+ // Fonction pour convertir mois/année en format date pour l'API - MODIFIÉE
+const getDateFilterForAPI = useMemo(() => {
+  // Si on a un médicament ET une année (avec ou sans mois)
+  if (medicamentRecherche && anneeFiltre) {
+    if (moisFiltre) {
+      // Mois et année spécifiques - format YYYY-MM-01
+      const moisFormate = moisFiltre.padStart(2, '0');
+      return `${anneeFiltre}-${moisFormate}-01`;
+    } else {
+      // Année seulement - format YYYY-01-01 (sera détecté comme filtre annuel par le backend)
+      return `${anneeFiltre}-01-01`;
+    }
+  }
+  
+  // Si pas de médicament mais mois ET année sélectionnés
+  if (!medicamentRecherche && moisFiltre && anneeFiltre) {
+    const moisFormate = moisFiltre.padStart(2, '0');
+    return `${anneeFiltre}-${moisFormate}-01`;
+  }
+  
+  return '';
+}, [medicamentRecherche, moisFiltre, anneeFiltre]);
 
   // Fonction pour obtenir les informations du dossier actuel
   const getCurrentDossierInfo = useCallback(async () => {
@@ -295,149 +308,102 @@ const Historique = () => {
 
   // ==================== RECHERCHE D'HISTORIQUE ====================
   
-  // Recherche d'historique avec DataContext (modifiée pour utiliser le filtre mois/année)
-  const loadHistoriqueOrdonnances = useCallback(async () => {
-    if (!debouncedMedicament && !getDateFilterForAPI) return;
+  // Recherche d'historique avec gestion du type de filtre
+const loadHistoriqueOrdonnances = useCallback(async () => {
+  if (!medicamentRecherche && !getDateFilterForAPI) return;
 
-    setLoading(true);
-    setError('');
-    
-    try {
-      const params = {
-        page: currentPage,
-        per_page: 10,
-        ...(debouncedMedicament && { medicament_libre: debouncedMedicament }),
-        ...(getDateFilterForAPI && { date: getDateFilterForAPI })
-      };
+  setLoading(true);
+  setError('');
+  
+  try {
+    const params = {
+      page: currentPage,
+      per_page: 10
+    };
 
-      console.log('Recherche historique avec DataContext:', params);
+    // Ajouter le médicament si présent
+    if (medicamentRecherche) {
+      params.medicament_libre = medicamentRecherche;
+    }
 
-      const response = await getHistoriqueParMedicamentLibre(params);
+    // Ajouter la date et le type de filtre
+    if (getDateFilterForAPI) {
+      params.date = getDateFilterForAPI;
       
-      if (response.success) {
-        setOrdonnances(response.data.ordonnances || []);
-        setTotalPages(response.data.pagination?.last_page || 1);
-        setTotalOrdonnances(response.data.total_ordonnances || 0);
-        
-        console.log(`${response.data.ordonnances?.length || 0} ordonnances trouvées`);
-      } else {
-        setError(response.message || 'Aucune ordonnance trouvée');
-        setOrdonnances([]);
-        setTotalOrdonnances(0);
+      // Déterminer le type de filtre
+      if (medicamentRecherche && anneeFiltre && !moisFiltre) {
+        // Médicament + année seulement = filtre par année
+        params.filter_type = 'year';
+      } else if (moisFiltre && anneeFiltre) {
+        // Mois et année = filtre par mois
+        params.filter_type = 'month';
       }
-    } catch (err) {
-      const errorMessage = err.message || 'Erreur lors du chargement de l\'historique';
-      setError(errorMessage);
+    }
+
+    console.log(`Recherche historique - Page ${currentPage}:`, params);
+
+    const response = await getHistoriqueParMedicamentLibre(params);
+    
+    if (response.success) {
+      setOrdonnances(response.data.ordonnances || []);
+      setTotalPages(response.data.pagination?.last_page || 1);
+      setTotalOrdonnances(response.data.total_ordonnances || 0);
+      
+      console.log(`${response.data.ordonnances?.length || 0} ordonnances trouvées - Page ${currentPage}/${response.data.pagination?.last_page || 1}`);
+      console.log(`Type de filtre appliqué: ${response.data.filter_type}`);
+    } else {
+      setError(response.message || 'Aucune ordonnance trouvée');
       setOrdonnances([]);
       setTotalOrdonnances(0);
-      console.error('Erreur historique:', err);
-    } finally {
-      setLoading(false);
     }
-  }, [currentPage, debouncedMedicament, getDateFilterForAPI, getHistoriqueParMedicamentLibre]);
+  } catch (err) {
+    const errorMessage = err.message || 'Erreur lors du chargement de l\'historique';
+    setError(errorMessage);
+    setOrdonnances([]);
+    setTotalOrdonnances(0);
+    console.error('Erreur historique:', err);
+  } finally {
+    setLoading(false);
+  }
+}, [currentPage, medicamentRecherche, getDateFilterForAPI, anneeFiltre, moisFiltre, getHistoriqueParMedicamentLibre]);
 
   // ==================== HANDLERS AUTOCOMPLÉTION ====================
 
   // Handler pour la sélection d'un médicament dans la liste
-  const handleMedicamentSelect = useCallback(async (medicament) => {
+  const handleMedicamentSelect = useCallback((medicament) => {
     console.log('Médicament sélectionné dans la liste:', medicament);
-    setMedicamentSelectionne(medicament);
+    setMedicamentAffichage(medicament);
+    setMedicamentRecherche(medicament); // Déclenche la recherche
     setCurrentPage(1);
-    
-    // Déclencher immédiatement la recherche quand on sélectionne dans la liste
-    try {
-      setLoading(true);
-      setError('');
-      
-      const params = {
-        page: 1,
-        per_page: 10,
-        medicament_libre: medicament,
-        ...(getDateFilterForAPI && { date: getDateFilterForAPI })
-      };
-
-      console.log('Recherche immédiate après sélection:', params);
-
-      const response = await getHistoriqueParMedicamentLibre(params);
-      
-      if (response.success) {
-        setOrdonnances(response.data.ordonnances || []);
-        setTotalPages(response.data.pagination?.last_page || 1);
-        setTotalOrdonnances(response.data.total_ordonnances || 0);
-        
-        console.log(`${response.data.ordonnances?.length || 0} ordonnances trouvées`);
-      } else {
-        setError(response.message || 'Aucune ordonnance trouvée');
-        setOrdonnances([]);
-        setTotalOrdonnances(0);
-      }
-    } catch (err) {
-      const errorMessage = err.message || 'Erreur lors du chargement de l\'historique';
-      setError(errorMessage);
-      setOrdonnances([]);
-      setTotalOrdonnances(0);
-      console.error('Erreur recherche après sélection:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [getDateFilterForAPI, getHistoriqueParMedicamentLibre]);
+  }, []);
   
-  // Gestionnaire de recherche pour l'autocomplétion
-  const handleMedicamentSearch = useCallback(async (medicament) => {
+  // Gestionnaire de recherche pour l'autocomplétion (Entrée)
+  const handleMedicamentSearch = useCallback((medicament) => {
     if (!medicament.trim()) return;
     
     console.log('Recherche déclenchée par Entrée pour:', medicament);
-    setMedicamentSelectionne(medicament);
+    setMedicamentAffichage(medicament);
+    setMedicamentRecherche(medicament); // Déclenche la recherche
     setCurrentPage(1);
-    
-    // Déclencher la recherche
-    try {
-      setLoading(true);
-      setError('');
-      
-      const params = {
-        page: 1,
-        per_page: 10,
-        medicament_libre: medicament,
-        ...(getDateFilterForAPI && { date: getDateFilterForAPI })
-      };
+  }, []);
 
-      const response = await getHistoriqueParMedicamentLibre(params);
-      
-      if (response.success) {
-        setOrdonnances(response.data.ordonnances || []);
-        setTotalPages(response.data.pagination?.last_page || 1);
-        setTotalOrdonnances(response.data.total_ordonnances || 0);
-      } else {
-        setError(response.message || 'Aucune ordonnance trouvée');
-        setOrdonnances([]);
-        setTotalOrdonnances(0);
-      }
-    } catch (err) {
-      const errorMessage = err.message || 'Erreur lors du chargement de l\'historique';
-      setError(errorMessage);
-      setOrdonnances([]);
-      setTotalOrdonnances(0);
-    } finally {
-      setLoading(false);
-    }
-  }, [getDateFilterForAPI, getHistoriqueParMedicamentLibre]);
-
+  // Handler pour les changements dans le champ (ne déclenche plus de recherche)
   const handleMedicamentChange = useCallback((medicament) => {
-    setMedicamentSelectionne(medicament);
+    setMedicamentAffichage(medicament); // Met à jour seulement l'affichage
     
-    // Ne réinitialiser que si le champ est complètement vidé
+    // Réinitialiser les résultats si le champ est complètement vidé
     if (!medicament.trim()) {
+      setMedicamentRecherche(''); // Vide aussi la valeur de recherche
       setOrdonnances([]);
       setTotalOrdonnances(0);
       setError('');
+      setCurrentPage(1);
     }
-    // Ne PAS déclencher de recherche automatique ici
   }, []);
 
   // ==================== EFFETS ====================
   
-  // Initialisation du composant
+  // 1. Initialisation du composant
   useEffect(() => {
     const initializeComponent = async () => {
       console.log('Initialisation du composant Historique');
@@ -448,7 +414,7 @@ const Historique = () => {
     initializeComponent();
   }, [getCurrentDossierInfo, loadSuggestionsMedicaments]);
 
-  // Surveiller les changements de dossier et les événements d'ordonnances
+  // 2. Surveiller les changements de dossier et les événements d'ordonnances
   useEffect(() => {
     const handleDossierChange = () => {
       resetFiltres();
@@ -461,11 +427,10 @@ const Historique = () => {
       console.log('Ordonnance créée détectée - rafraîchissement des suggestions');
       loadSuggestionsMedicaments(true);
       
-      if (medicamentSelectionne || getDateFilterForAPI) {
+      if (medicamentRecherche || getDateFilterForAPI) {
         loadHistoriqueOrdonnances();
       }
     };
-
     
     // Écouter les événements système
     window.addEventListener('storage', handleDossierChange);
@@ -479,28 +444,33 @@ const Historique = () => {
       eventBus.off(EVENTS.ORDONNANCE_CREATED, handleOrdonnanceCreated);
       window.removeEventListener('stats-refresh-needed', handleOrdonnanceCreated);
     };
-  }, [getCurrentDossierInfo, loadSuggestionsMedicaments, medicamentSelectionne, getDateFilterForAPI, loadHistoriqueOrdonnances]);
+  }, [getCurrentDossierInfo, loadSuggestionsMedicaments, medicamentRecherche, getDateFilterForAPI, loadHistoriqueOrdonnances]);
 
-  // useEffect pour la pagination seulement (sans déclencher automatiquement la recherche)
+  // 3. useEffect pour les recherches
   useEffect(() => {
-    // Ne recharger que si on a déjà des critères de recherche ET qu'on change de page
-    if ((debouncedMedicament || getDateFilterForAPI) && ordonnances.length > 0) {
-      loadHistoriqueOrdonnances();
-    }
-  }, [currentPage, loadHistoriqueOrdonnances]);
+  // NOUVELLE LOGIQUE : Recherche si on a soit un médicament, soit une date
+  const shouldSearch = medicamentRecherche || getDateFilterForAPI;
+  
+  if (!shouldSearch) {
+    setOrdonnances([]);
+    setTotalOrdonnances(0);
+    return;
+  }
 
-  // ✅ MODIFICATION: useEffect pour surveiller les changements de mois/année
-  useEffect(() => {
-    if (getDateFilterForAPI) {
-      // Si on a un filtre de date (mois/année), rechercher automatiquement
-      setCurrentPage(1);
-      loadHistoriqueOrdonnances();
-    } else if (!debouncedMedicament) {
-      // Réinitialiser si aucun critère
-      setOrdonnances([]);
-      setTotalOrdonnances(0);
-    }
-  }, [getDateFilterForAPI, loadHistoriqueOrdonnances, debouncedMedicament]);
+  // Déclencher la recherche
+  console.log(`Recherche déclenchée - Page: ${currentPage}, Médicament: ${medicamentRecherche}, Date: ${getDateFilterForAPI}`);
+  loadHistoriqueOrdonnances();
+}, [medicamentRecherche, getDateFilterForAPI, currentPage, loadHistoriqueOrdonnances]);
+
+  // 4. useEffect pour réinitialiser la page lors des changements de filtres
+ useEffect(() => {
+  // Réinitialiser à la page 1 uniquement quand les filtres principaux changent
+  if (currentPage !== 1) {
+    console.log('Réinitialisation à la page 1 suite au changement de filtre');
+    setCurrentPage(1);
+  }
+// ATTENTION : On retire anneeFiltre et moisFiltre de cette dépendance pour éviter les conflits
+}, [medicamentRecherche, debouncedMois, debouncedAnnee]);
 
   // ==================== GESTION DES DÉTAILS ====================
   
@@ -546,22 +516,27 @@ const Historique = () => {
 
   // ==================== FONCTIONS D'EXPORT ====================
   
-  // Générer le titre pour les exports (modifié pour mois/année)
+  // Générer le titre pour les exports
   const generateExportTitle = useMemo(() => {
     const parts = ['Ordonnances'];
     
-    if (debouncedMedicament) {
-      const medicament = medicamentsDisponibles.find(m => m.designation === debouncedMedicament);
-      parts.push(`- ${medicament ? medicament.designation : debouncedMedicament}`);
+    if (medicamentRecherche) {
+      const medicament = medicamentsDisponibles.find(m => m.designation === medicamentRecherche);
+      parts.push(`- ${medicament ? medicament.designation : medicamentRecherche}`);
     }
     
-    if (getDateFilterForAPI) {
+    if (getDateFilterForAPI || (medicamentRecherche && anneeFiltre)) {
       const moisNoms = [
         '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
         'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
       ];
-      const moisNom = moisNoms[parseInt(debouncedMois)] || debouncedMois;
-      parts.push(`- ${moisNom} ${debouncedAnnee}`);
+      
+      if (moisFiltre) {
+        const moisNom = moisNoms[parseInt(moisFiltre)] || moisFiltre;
+        parts.push(`- ${moisNom} ${anneeFiltre}`);
+      } else if (anneeFiltre) {
+        parts.push(`- ${anneeFiltre}`);
+      }
     }
     
     if (currentDossier && currentDossier !== 'default') {
@@ -569,7 +544,7 @@ const Historique = () => {
     }
     
     return parts.join(' ');
-  }, [debouncedMedicament, getDateFilterForAPI, debouncedMois, debouncedAnnee, currentDossier, medicamentsDisponibles]);
+  }, [medicamentRecherche, getDateFilterForAPI, anneeFiltre, moisFiltre, currentDossier, medicamentsDisponibles]);
 
   // Exporter la liste en PDF avec DataContext
   const handleExportListPDF = async () => {
@@ -583,8 +558,8 @@ const Historique = () => {
       showInfo('Génération de l\'export PDF...');
       
       const params = {
-        medicament: debouncedMedicament,
-        date: getDateFilterForAPI,
+        medicament: medicamentRecherche,
+        date: getDateFilterForAPI || (medicamentRecherche && anneeFiltre ? `${anneeFiltre}-01-01` : ''),
         titre: generateExportTitle,
         format: 'pdf'
       };
@@ -614,8 +589,8 @@ const Historique = () => {
       showInfo('Préparation de l\'impression...');
       
       const params = {
-        medicament: debouncedMedicament,
-        date: getDateFilterForAPI,
+        medicament: medicamentRecherche,
+        date: getDateFilterForAPI || (medicamentRecherche && anneeFiltre ? `${anneeFiltre}-01-01` : ''),
         titre: generateExportTitle
       };
       
@@ -634,8 +609,10 @@ const Historique = () => {
 
   // ==================== FONCTIONS UTILITAIRES ====================
   
+  // Reset des filtres
   const resetFiltres = () => {
-    setMedicamentSelectionne('');
+    setMedicamentAffichage('');
+    setMedicamentRecherche('');
     setMoisFiltre('');
     setAnneeFiltre(new Date().getFullYear().toString()); 
     setCurrentPage(1);
@@ -652,7 +629,8 @@ const Historique = () => {
       await getCurrentDossierInfo();
       await loadSuggestionsMedicaments(true);
       
-      if (debouncedMedicament || getDateFilterForAPI) {
+      if (medicamentRecherche || getDateFilterForAPI) {
+        setCurrentPage(1);
         await loadHistoriqueOrdonnances();
       }
     } catch (error) {
@@ -662,46 +640,43 @@ const Historique = () => {
     }
   };
 
-  // Générer le texte de résumé des résultats (modifié pour mois/année)
+  // Générer le texte de résumé des résultats
   const getTexteSummary = () => {
-    if (!debouncedMedicament && !getDateFilterForAPI) return null;
+    if (!medicamentRecherche && !getDateFilterForAPI) return null;
 
     const dossierText = currentDossier ? ` (Dossier: ${currentDossier})` : '';
 
-    if (debouncedMedicament && getDateFilterForAPI) {
-      const medicament = medicamentsDisponibles.find(m => m.designation === debouncedMedicament);
-      const nomMedicament = medicament ? medicament.designation : debouncedMedicament;
-      const moisNoms = [
-        '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-        'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
-      ];
-      const moisNom = moisNoms[parseInt(debouncedMois)] || debouncedMois;
-      return `${totalOrdonnances} ordonnance(s) pour ${nomMedicament} en ${moisNom} ${debouncedAnnee}${dossierText}`;
-    } else if (debouncedMedicament) {
-      const medicament = medicamentsDisponibles.find(m => m.designation === debouncedMedicament);
-      const nomMedicament = medicament ? medicament.designation : debouncedMedicament;
-      return `${totalOrdonnances} ordonnance(s) pour ${nomMedicament}${dossierText}`;
+    if (medicamentRecherche) {
+      const medicament = medicamentsDisponibles.find(m => m.designation === medicamentRecherche);
+      const nomMedicament = medicament ? medicament.designation : medicamentRecherche;
+      
+      if (moisFiltre && anneeFiltre) {
+        const moisNoms = [
+          '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+          'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+        ];
+        const moisNom = moisNoms[parseInt(moisFiltre)] || moisFiltre;
+        return `${totalOrdonnances} ordonnance(s) pour ${nomMedicament} en ${moisNom} ${anneeFiltre}${dossierText}`;
+      } else if (anneeFiltre) {
+        return `${totalOrdonnances} ordonnance(s) pour ${nomMedicament} en ${anneeFiltre}${dossierText}`;
+      } else {
+        return `${totalOrdonnances} ordonnance(s) pour ${nomMedicament}${dossierText}`;
+      }
     } else if (getDateFilterForAPI) {
-      const moisNoms = [
-        '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-        'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
-      ];
-      const moisNom = moisNoms[parseInt(debouncedMois)] || debouncedMois;
-      return `${totalOrdonnances} ordonnance(s) enregistrée(s) en ${moisNom} ${debouncedAnnee}${dossierText}`;
+      if (moisFiltre) {
+        const moisNoms = [
+          '', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+          'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+        ];
+        const moisNom = moisNoms[parseInt(moisFiltre)] || moisFiltre;
+        return `${totalOrdonnances} ordonnance(s) enregistrée(s) en ${moisNom} ${anneeFiltre}${dossierText}`;
+      } else {
+        return `${totalOrdonnances} ordonnance(s) enregistrée(s) en ${anneeFiltre}${dossierText}`;
+      }
     }
   };
 
-  const peutRechercher = debouncedMedicament || getDateFilterForAPI;
-
-  // Générer les années disponibles (de l'année actuelle - 10 à l'année actuelle + 1)
-  const generateYears = () => {
-    const currentYear = new Date().getFullYear();
-    const years = [];
-    for (let year = currentYear - 10; year <= currentYear + 1; year++) {
-      years.push(year);
-    }
-    return years;
-  };
+  const peutRechercher = medicamentRecherche || getDateFilterForAPI;
 
   // ==================== RENDU PRINCIPAL ====================
   return (
@@ -785,13 +760,13 @@ const Historique = () => {
             </label>
             <div className="flex-1">
               <MedicamentAutocomplete
-                value={medicamentSelectionne}
+                value={medicamentAffichage}
                 onChange={handleMedicamentChange}        
                 onSearch={handleMedicamentSearch}        
                 onSelect={handleMedicamentSelect}        
                 suggestions={medicamentsDisponibles}
                 loading={loadingSuggestions}
-                placeholder="Saisissez le nom d'un médicament..."
+                placeholder="Saisissez le nom d'un médicament et appuyez sur Entrée..."
               />
               {loadingSuggestions && (
                 <p className="text-xs text-gray-500 mt-1">Chargement des suggestions...</p>
@@ -799,49 +774,51 @@ const Historique = () => {
             </div>
           </div>
 
-          {/* Filtre par mois et année */}
+          {/* Filtre par mois et année avec indication */}
           <div className="flex items-center space-x-3">
             <label className="text-sm font-medium text-gray-700 whitespace-nowrap">
               Période :
             </label>
-            <div className="flex-1 flex space-x-2">
-              {/* Sélecteur de mois */}
-              <select
-                value={moisFiltre}
-                onChange={(e) => {
-                  setMoisFiltre(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Mois</option>
-                <option value="1">Janvier</option>
-                <option value="2">Février</option>
-                <option value="3">Mars</option>
-                <option value="4">Avril</option>
-                <option value="5">Mai</option>
-                <option value="6">Juin</option>
-                <option value="7">Juillet</option>
-                <option value="8">Août</option>
-                <option value="9">Septembre</option>
-                <option value="10">Octobre</option>
-                <option value="11">Novembre</option>
-                <option value="12">Décembre</option>
-              </select>
-              
-              {/* Sélecteur d'année */}
-              <input
-  type="number"
-  value={anneeFiltre}
-  onChange={(e) => {
-    setAnneeFiltre(e.target.value);
-    setCurrentPage(1);
-  }}
-  placeholder="Année (ex: 2024)"
-  min="2000"
-  max="2099"
-  className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-/>
+            <div className="flex-1">
+              <div className="flex space-x-2 mb-1">
+                {/* Sélecteur de mois */}
+                <select
+                  value={moisFiltre}
+                  onChange={(e) => {
+                    setMoisFiltre(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Mois</option>
+                  <option value="1">Janvier</option>
+                  <option value="2">Février</option>
+                  <option value="3">Mars</option>
+                  <option value="4">Avril</option>
+                  <option value="5">Mai</option>
+                  <option value="6">Juin</option>
+                  <option value="7">Juillet</option>
+                  <option value="8">Août</option>
+                  <option value="9">Septembre</option>
+                  <option value="10">Octobre</option>
+                  <option value="11">Novembre</option>
+                  <option value="12">Décembre</option>
+                </select>
+                
+                {/* Sélecteur d'année */}
+                <input
+                  type="number"
+                  value={anneeFiltre}
+                  onChange={(e) => {
+                    setAnneeFiltre(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  placeholder="Année (ex: 2025)"
+                  min="2000"
+                  max="2099"
+                  className="flex-1 p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -869,6 +846,9 @@ const Historique = () => {
           <div className="text-center py-12">
             <Filter className="w-16 h-16 text-gray-300 mb-4 mx-auto" />
             <p className="text-gray-500">Sélectionnez un médicament et/ou une période pour voir l'historique des ordonnances</p>
+            <p className="text-sm text-gray-400 mt-2">
+              Pour rechercher un médicament, tapez son nom et appuyez sur <kbd className="px-1 py-0.5 bg-gray-100 border rounded text-xs">Entrée</kbd>
+            </p>
           </div>
         ) : (loading || contextLoading.ordonnances) ? (
           // État de chargement
@@ -881,9 +861,12 @@ const Historique = () => {
           <div className="text-center py-12">
             <FileText className="w-16 h-16 text-gray-300 mb-4 mx-auto" />
             <p className="text-gray-500">Aucune ordonnance trouvée avec ces critères</p>
-            {debouncedMedicament && (
+            {medicamentRecherche && (
               <p className="text-sm text-gray-400 mt-2">
-                Recherche effectuée pour : "{debouncedMedicament}"
+                Recherche effectuée pour : "{medicamentRecherche}"
+                {anneeFiltre && (
+                  <span> en {anneeFiltre}</span>
+                )}
               </p>
             )}
           </div>
@@ -917,48 +900,48 @@ const Historique = () => {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {ordonnances.map((ordonnance) => (
-  <tr key={ordonnance.id} className="hover:bg-gray-50">
-    <td className="px-4 py-2">
-      <div className="flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-sm font-medium text-gray-900">
-            {ordonnance.client?.nom_complet}
-          </div>
-        </div>
-      </div>
-    </td>
-    <td className="px-4 py-2 text-center">
-      <div className="text-sm font-medium text-gray-900">
-        Dr. {ordonnance.medecin?.nom_complet} ({ordonnance.medecin?.ONM})
-      </div>
-    </td>
-    <td className="px-4 py-2 text-center">
-      <div className="text-sm font-medium text-gray-900">
-        {ordonnance.medicament_principal || debouncedMedicament || 'Divers médicaments'}
-      </div>
-    </td>
-    <td className="px-4 py-2 whitespace-nowrap text-center">
-      <div className="text-sm text-gray-900">
-        {new Date(ordonnance.date).toLocaleDateString('fr-FR')}
-      </div>
-    </td>
-    <td className="px-4 py-2 whitespace-nowrap text-center">
-      <div className="text-sm text-gray-900 font-medium">
-        {ordonnance.numero_ordonnance}
-      </div>
-    </td>
-    <td className="px-4 py-2 whitespace-nowrap text-center">
-      <button
-        onClick={() => handleViewDetails(ordonnance)}
-        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors text-sm font-medium flex items-center mx-auto"
-        title="Voir détails"
-      >
-        <Eye className="w-4 h-4 mr-1" />
-        Détails
-      </button>
-    </td>
-  </tr>
-))}
+                      <tr key={ordonnance.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2">
+                          <div className="flex items-center justify-center">
+                            <div className="text-center">
+                              <div className="text-sm font-medium text-gray-900">
+                                {ordonnance.client?.nom_complet}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-center">
+                          <div className="text-sm font-medium text-gray-900">
+                            Dr. {ordonnance.medecin?.nom_complet} ({ordonnance.medecin?.ONM})
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-center">
+                          <div className="text-sm font-medium text-gray-900">
+                            {ordonnance.medicament_principal || medicamentRecherche || 'Divers médicaments'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900">
+                            {new Date(ordonnance.date).toLocaleDateString('fr-FR')}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 whitespace-nowrap text-center">
+                          <div className="text-sm text-gray-900 font-medium">
+                            {ordonnance.numero_ordonnance}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 whitespace-nowrap text-center">
+                          <button
+                            onClick={() => handleViewDetails(ordonnance)}
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors text-sm font-medium flex items-center mx-auto"
+                            title="Voir détails"
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            Détails
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -1000,11 +983,11 @@ const Historique = () => {
                     currentPage === totalPages 
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
                       : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                    }`}
-                  >
-                    Suivant
-                  </button>
-                </div>
+                  }`}
+                >
+                  Suivant
+                </button>
+              </div>
             )}
           </>
         )}

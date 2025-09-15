@@ -323,13 +323,13 @@ const FormulaireOrdonnance = React.memo(({
 
       {/* Client avec recherche */}
       <div className="grid grid-cols-4 gap-4 items-start">
-        <label className="text-gray-700 font-medium pt-2">Infos Client</label>
+        <label className="text-gray-700 font-medium pt-2">Infos Patient</label>
         <div className="col-span-3 space-y-3">
           {/* Recherche client */}
           <div className="relative">
             <input
               type="text"
-              placeholder="Tapez le nom du client ou créez un nouveau client..."
+              placeholder="Tapez le nom du patient ou créez un nouveau ..."
               value={searchClient}
               onChange={(e) => handleClientSearch(e.target.value)}
               onFocus={() => setShowClientSuggestions(true)}
@@ -782,7 +782,7 @@ const Ordonnances = () => {
         // Charger TOUTES les ordonnances (pagination élevée pour tout récupérer)
         const response = await ordonnanceService.getOrdonnances({
           page: 1,
-          per_page: 1000, // Récupérer beaucoup d'ordonnances d'un coup
+          per_page: 50, // Récupérer beaucoup d'ordonnances d'un coup
           search: '' // Pas de recherche côté serveur
         });
 
@@ -1422,7 +1422,7 @@ const Ordonnances = () => {
                         Date
                       </th>
                       <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Client
+                        Patient
                       </th>
                       <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Médecin
