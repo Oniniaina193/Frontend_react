@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Search, Package, Loader, AlertCircle } from 'lucide-react';
+import { useAutoReload } from '../../../central/hooks/useDataRefresh';
 
 // Service de recherche direct - sans DataContext
 class DirectSearchService {
@@ -63,8 +64,19 @@ const Accueil = () => {
   // Cache local optimisé
   const [searchCache, setSearchCache] = useState(new Map());
 
-  // Vérification de session au chargement (rapide)
-  useEffect(() => {
+  // Fonction de refresh à appeler lors d'un refresh global
+  const handleDataRefresh = useCallback(() => {
+    console.log('🔄 Refresh détecté dans Accueil - nettoyage du cache et vérification session');
+    
+    // Vider le cache de recherche
+    setSearchCache(new Map());
+    
+    // Réinitialiser les résultats si une recherche était en cours
+    setSearchResults([]);
+    setHasSearched(false);
+    setSearchError('');
+    
+    // Re-vérifier la session
     const checkSession = async () => {
       const isValid = await searchService.current.checkSession();
       setSessionValid(isValid);
@@ -73,8 +85,25 @@ const Accueil = () => {
     checkSession();
   }, []);
 
+  // Utiliser le hook pour écouter les refresh
+  const { isRefreshing: globalIsRefreshing } = useAutoReload(handleDataRefresh);
+
+  // Vérification de session au chargement (rapide)
+  useEffect(() => {
+    if (!globalIsRefreshing) { // Ne pas vérifier pendant un refresh global
+      const checkSession = async () => {
+        const isValid = await searchService.current.checkSession();
+        setSessionValid(isValid);
+      };
+      
+      checkSession();
+    }
+  }, [globalIsRefreshing]);
+
   // Fonction de recherche optimisée
   const performSearch = useCallback(async (term) => {
+    if (globalIsRefreshing) return; // Ne pas rechercher pendant un refresh global
+    
     const trimmedTerm = term.trim();
     
     if (!trimmedTerm) {
@@ -143,16 +172,20 @@ const Accueil = () => {
     } finally {
       setIsSearching(false);
     }
-  }, [sessionValid, searchCache]);
+  }, [sessionValid, searchCache, globalIsRefreshing]);
 
   const handleKeyDown = useCallback((e) => {
+    if (globalIsRefreshing) return; // Ne pas permettre la recherche pendant un refresh global
+    
     if (e.key === 'Enter' && searchTerm.trim()) {
       e.preventDefault();
       performSearch(searchTerm);
     }
-  }, [searchTerm, performSearch]);
+  }, [searchTerm, performSearch, globalIsRefreshing]);
 
   const handleInputChange = useCallback((e) => {
+    if (globalIsRefreshing) return; // Ne pas permettre de changer pendant un refresh global
+    
     const value = e.target.value;
     setSearchTerm(value);
     
@@ -161,7 +194,7 @@ const Accueil = () => {
       setHasSearched(false);
       setSearchError('');
     }
-  }, []);
+  }, [globalIsRefreshing]);
 
   const formatPrice = useCallback((price) => {
     const numPrice = parseFloat(price);
@@ -224,6 +257,18 @@ const Accueil = () => {
 
   return (
     <div className="bg-white min-h-screen overflow-y-auto">
+      {/* Indicateur de refresh global */}
+      {globalIsRefreshing && (
+        <div className="bg-blue-50 border-b border-blue-200 px-6 py-3">
+          <div className="flex items-center justify-center space-x-2 max-w-4xl mx-auto">
+            <Loader className="w-4 h-4 text-blue-600 animate-spin" />
+            <span className="text-blue-700 text-sm font-medium">
+              Mise à jour des données en cours...
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Section de recherche */}
       <div className="px-6 py-8 border-b border-gray-200">
         <div className="max-w-4xl mx-auto">
@@ -240,19 +285,23 @@ const Accueil = () => {
                 value={searchTerm}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder={sessionValid === false ? "Sélectionnez d'abord un dossier..." : "Saisissez le nom de l'article et appuyez sur Entrée..."}
-                disabled={sessionValid === false}
+                placeholder={
+                  globalIsRefreshing ? "Mise à jour en cours..." :
+                  sessionValid === false ? "Sélectionnez d'abord un dossier..." : 
+                  "Saisissez le nom de l'article et appuyez sur Entrée..."
+                }
+                disabled={sessionValid === false || globalIsRefreshing}
                 className="w-full pl-10 pr-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors text-lg"
                 autoComplete="off"
               />
-              {isSearching && (
+              {(isSearching || globalIsRefreshing) && (
                 <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
                   <Loader className="w-5 h-5 animate-spin text-blue-600" />
                 </div>
               )}
             </div>
             
-            {searchResults.length > 0 && !isSearching && (
+            {searchResults.length > 0 && !isSearching && !globalIsRefreshing && (
               <div className="flex items-center space-x-3">
                 <div className="text-sm font-medium text-gray-700 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
                   {searchResults.length} résultat{searchResults.length > 1 ? 's' : ''}
@@ -268,13 +317,16 @@ const Accueil = () => {
 
           {/* Statut de connexion optimisé */}
           <div className="mt-4 text-center">
-            {sessionValid === null && (
+            {globalIsRefreshing && (
+              <p className="text-blue-600">Actualisation des données en cours...</p>
+            )}
+            {!globalIsRefreshing && sessionValid === null && (
               <p className="text-blue-600">Vérification de la session...</p>
             )}
-            {sessionValid === true && searchResults.length === 0 && !hasSearched && (
+            {!globalIsRefreshing && sessionValid === true && searchResults.length === 0 && !hasSearched && (
               <p className="text-green-600">✓ Prêt pour la recherche</p>
             )}
-            {sessionValid === false && (
+            {!globalIsRefreshing && sessionValid === false && (
               <div className="text-red-600">
                 <p>✗ Aucun dossier sélectionné</p>
                 <a 
@@ -290,7 +342,7 @@ const Accueil = () => {
       </div>
 
       {/* Messages d'erreur */}
-      {searchError && (
+      {searchError && !globalIsRefreshing && (
         <div className="px-6 py-4 max-w-6xl mx-auto">
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
             <div className="flex items-start space-x-3">
@@ -307,14 +359,16 @@ const Accueil = () => {
       {/* Résultats de recherche */}
       <div className={`px-6 ${searchResults.length > 0 ? 'py-0' : 'py-2'}`}>
         <div className="max-w-6xl mx-auto">
-          {isSearching && (
+          {(isSearching || globalIsRefreshing) && (
             <div className="flex items-center justify-center py-6">
               <Loader className="w-6 h-6 animate-spin text-blue-600 mr-3" />
-              <span className="text-gray-600">Recherche en cours...</span>
+              <span className="text-gray-600">
+                {globalIsRefreshing ? 'Actualisation en cours...' : 'Recherche en cours...'}
+              </span>
             </div>
           )}
 
-          {!isSearching && hasSearched && searchResults.length === 0 && searchTerm && !searchError && (
+          {!isSearching && !globalIsRefreshing && hasSearched && searchResults.length === 0 && searchTerm && !searchError && (
             <div className="text-center py-6">
               <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-500 text-xl mb-2">Aucun article trouvé</p>
@@ -324,7 +378,7 @@ const Accueil = () => {
             </div>
           )}
 
-          {!hasSearched && !searchTerm && sessionValid === true && (
+          {!hasSearched && !searchTerm && sessionValid === true && !globalIsRefreshing && (
             <div className="text-center py-6">
               <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <p className="text-gray-500 text-xl mb-2">Recherche instantanée</p>
@@ -334,7 +388,7 @@ const Accueil = () => {
             </div>
           )}
 
-          {searchResults.length > 0 && !isSearching && (
+          {searchResults.length > 0 && !isSearching && !globalIsRefreshing && (
             <div className="bg-white rounded-lg overflow-hidden shadow-sm max-h-96 overflow-y-auto mt-1">
               <div className="overflow-x-auto">
                 <table className="min-w-full">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Package, Filter, ChevronLeft, ChevronRight, Loader, AlertCircle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
+import { useAutoReload } from '../../../central/hooks/useDataRefresh';
 
 const Consultation = ({ onBack }) => {
   // ==================== ÉTATS LOCAUX ====================
@@ -28,6 +29,28 @@ const Consultation = ({ onBack }) => {
     loadEssentialDataAfterFolder
   } = useData();
 
+  // Fonction de rechargement à appeler lors d'un refresh
+  const handleDataRefresh = useCallback(() => {
+    console.log('🔄 Refresh détecté dans Consultation - rechargement des données');
+    
+    // Vider les caches
+    setAllArticles([]);
+    setFamilyCache(new Map());
+    setCurrentResults([]);
+    
+    // Réinitialiser la famille sélectionnée
+    setSelectedFamily('');
+    
+    // Recharger les données essentielles du contexte
+    loadEssentialDataAfterFolder().then(() => {
+      // Après le rechargement du contexte, recharger tous les articles
+      loadAllArticles();
+    });
+  }, [loadEssentialDataAfterFolder]);
+
+  // NOUVEAU: Utiliser le hook pour écouter les refresh
+  const { isRefreshing: globalIsRefreshing } = useAutoReload(handleDataRefresh);
+
   // ==================== ÉTAT DE CONNEXION ====================
 
   const connectionStatus = useMemo(() => {
@@ -46,7 +69,8 @@ const Consultation = ({ onBack }) => {
       initialDataLoaded,
       connectionStatus,
       currentResultsLength: currentResults.length,
-      allArticlesLength: allArticles.length
+      allArticlesLength: allArticles.length,
+      globalIsRefreshing
     });
 
     // Charger automatiquement si les données initiales sont prêtes mais pas encore affichées
@@ -67,29 +91,31 @@ const Consultation = ({ onBack }) => {
 
   // Effet pour filtrage par famille
   useEffect(() => {
-    if (!selectedFamily) {
-      // Quand pas de famille sélectionnée, afficher tous les articles
-      if (allArticles.length > 0) {
-        setCurrentResults(allArticles);
-        setPagination(prev => ({
-          ...prev,
-          current_page: 1
-        }));
-      } else if (initialDataLoaded && connectionStatus === 'ok') {
-        // Si pas d'articles en cache mais données initiales prêtes, les charger
-        loadAllArticles();
+    if (!globalIsRefreshing) { // NOUVEAU: Ne pas filtrer pendant un refresh global
+      if (!selectedFamily) {
+        // Quand pas de famille sélectionnée, afficher tous les articles
+        if (allArticles.length > 0) {
+          setCurrentResults(allArticles);
+          setPagination(prev => ({
+            ...prev,
+            current_page: 1
+          }));
+        } else if (initialDataLoaded && connectionStatus === 'ok') {
+          // Si pas d'articles en cache mais données initiales prêtes, les charger
+          loadAllArticles();
+        }
+      } else {
+        // Famille sélectionnée = filtrer
+        filterByFamily(selectedFamily);
       }
-    } else {
-      // Famille sélectionnée = filtrer
-      filterByFamily(selectedFamily);
     }
-  }, [selectedFamily, allArticles.length, initialDataLoaded, connectionStatus]);
+  }, [selectedFamily, allArticles.length, initialDataLoaded, connectionStatus, globalIsRefreshing]); // MODIFIÉ: Ajouter globalIsRefreshing
 
   // ==================== FONCTIONS DE CHARGEMENT ====================
 
   // Fonction pour charger TOUS les articles (optimisée)
   const loadAllArticles = async () => {
-    if (isSearching) return;
+    if (isSearching || globalIsRefreshing) return;
     
     setIsSearching(true);
     
@@ -135,7 +161,7 @@ const Consultation = ({ onBack }) => {
 
   // Filtrage immédiat par famille
   const filterByFamily = useCallback(async (family) => {
-    if (!family) return;
+    if (!family || globalIsRefreshing) return;
 
     // Vérifier le cache d'abord
     if (familyCache.has(family)) {
@@ -191,7 +217,7 @@ const Consultation = ({ onBack }) => {
     } finally {
       setIsSearching(false);
     }
-  }, [searchArticles, familyCache]);
+  }, [searchArticles, familyCache, globalIsRefreshing]);
 
   // ==================== GESTION DE PAGINATION ====================
 
@@ -208,6 +234,8 @@ const Consultation = ({ onBack }) => {
   };
 
   const searchFamilyPage = async (family, page) => {
+    if (globalIsRefreshing) return;
+
     setIsSearching(true);
     
     try {
@@ -227,6 +255,8 @@ const Consultation = ({ onBack }) => {
   };
 
   const searchAllArticlesPage = async (page) => {
+    if (globalIsRefreshing) return;
+
     setIsSearching(true);
     
     try {
@@ -254,12 +284,14 @@ const Consultation = ({ onBack }) => {
 
   // Gestionnaire de changement de famille
   const handleFamilyChange = useCallback((e) => {
+    if (globalIsRefreshing) return; 
+
     const newFamily = e.target.value;
     setSelectedFamily(newFamily);
     
     // Réinitialiser à la première page
     setPagination(prev => ({ ...prev, current_page: 1 }));
-  }, []);
+  }, [globalIsRefreshing]);
 
   // Fonction pour actualiser les données
   const handleRefresh = useCallback(() => {
@@ -367,6 +399,18 @@ const Consultation = ({ onBack }) => {
 
   return (
     <div className="flex flex-col h-full bg-white overflow-hidden">
+      {/* MODIFIÉ: Ajouter l'indicateur de refresh global */}
+      {globalIsRefreshing && (
+        <div className="flex-shrink-0 px-6 py-2 bg-blue-50 border-b border-blue-200">
+          <div className="flex items-center justify-center space-x-2">
+            <Loader className="w-4 h-4 text-blue-600 animate-spin" />
+            <span className="text-blue-700 text-sm font-medium">
+              Mise à jour des données en cours...
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* En-tête avec filtres */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200">
         <div className="px-6 py-2">

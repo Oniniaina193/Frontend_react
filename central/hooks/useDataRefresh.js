@@ -1,6 +1,6 @@
 // hooks/useDataRefresh.js
 import { useEffect, useCallback, useState } from 'react';
-import dataRefreshService from '../services/DataRefreshService';
+import dataRefreshService from '../../src/services/DatRefreshService';
 
 /**
  * Hook personnalisé pour gérer les mises à jour de données

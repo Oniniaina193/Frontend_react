@@ -21,6 +21,7 @@ import ordonnanceService from '../../services/OrdonnanceService';
 import clientService from '../../services/ClientService';
 import medecinService from '../../services/medecinService';
 import { useData } from '../../contexts/DataContext';
+import { useAutoReload } from '../../../central/hooks/useDataRefresh';
 
 // NOUVEAUX IMPORTS POUR LES OPTIMISATIONS
 import { useOptimizedNotifications } from '../../utils/OptimizedNotifications';
@@ -75,6 +76,8 @@ const FormulaireOrdonnance = React.memo(({
       medecin.ONM.toLowerCase().includes(searchMedecin.toLowerCase())
     ).slice(0, 8); // Limiter à 8 résultats
   }, [medecins, searchMedecin]);
+
+
 
   // Filtrer les clients basé sur la recherche
   const filteredClients = useMemo(() => {
@@ -707,6 +710,7 @@ const Ordonnances = () => {
     });
   }, [allOrdonnances, searchTerm]);
 
+
   // Mise à jour des ordonnances affichées quand le filtre change
   useEffect(() => {
     setOrdonnances(filteredOrdonnances);
@@ -999,6 +1003,20 @@ const Ordonnances = () => {
       console.error('Erreur recherche tickets:', err);
     }
   }, []);
+
+  // Déplacez ces lignes APRÈS la définition de handleSearchTickets
+const handleDataRefresh = useCallback(() => {
+  console.log('🔄 Refresh détecté dans Ordonnances');
+  setTickets([]);
+  
+  if (formData.code_ticket && formData.code_ticket.length >= 3) {
+    setTimeout(() => {
+      handleSearchTickets(formData.code_ticket);
+    }, 500);
+  }
+}, [formData.code_ticket]);
+
+const { isRefreshing: globalIsRefreshing } = useAutoReload(handleDataRefresh);
 
   const handleLoadTicketDetails = useCallback(async (codeTicket) => {
     setLoadingTicket(true);

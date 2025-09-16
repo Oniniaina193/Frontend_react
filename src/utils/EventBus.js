@@ -70,6 +70,11 @@ export const EVENTS = {
   ORDONNANCE_CREATED: 'ordonnance:created',
   ORDONNANCE_UPDATED: 'ordonnance:updated',
   ORDONNANCE_DELETED: 'ordonnance:deleted',
+
+   // NOUVEAUX: Refresh des données
+  DATA_REFRESH_STARTED: 'data:refresh_started',
+  DATA_REFRESHED: 'data:refreshed',
+  DATA_REFRESH_ERROR: 'data:refresh_error',
   
   // Statistiques
   STATS_REFRESH_NEEDED: 'stats:refresh_needed',

@@ -4,7 +4,7 @@ import directAccessService from '../services/directAccessService';
 import medicamentService from '../services/medicamentService';
 import medecinService from '../services/medecinService';
 import ordonnanceService from '../services/OrdonnanceService';
-import statistiquesService from '../services/statistiquesService';
+import statistiquesService from '../services/StatistiquesService';
 import eventBus, { EVENTS } from '../utils/EventBus';
 
 const DataContext = createContext();

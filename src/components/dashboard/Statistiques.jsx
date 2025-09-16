@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { Loader } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
+import { useAutoReload } from '../../../central/hooks/useDataRefresh';
 import eventBus, { EVENTS } from "../../utils/EventBus";
 
 const Statistiques = () => {
@@ -16,6 +18,22 @@ const Statistiques = () => {
   const [dashboardStats, setDashboardStats] = useState([]);
   const [ventesData, setVentesData] = useState([]);
   const [topMedicaments, setTopMedicaments] = useState([]);
+
+  // Fonction de refresh à appeler lors d'un refresh global
+  const handleDataRefresh = useCallback(() => {
+    console.log('🔄 Refresh détecté dans Statistiques - rechargement des données');
+    
+    // Vider les caches locaux
+    setDashboardStats([]);
+    setVentesData([]);
+    setTopMedicaments([]);
+    
+    // Recharger les statistiques
+    refreshStatistiques(true);
+  }, [refreshStatistiques]);
+
+  // Utiliser le hook pour écouter les refresh
+  const { isRefreshing: globalIsRefreshing } = useAutoReload(handleDataRefresh);
 
   // Fonction pour charger/reformater les données
   const updateDisplayData = () => {
@@ -42,42 +60,47 @@ const Statistiques = () => {
 
   // Charger les données au montage et quand les statistiques changent
   useEffect(() => {
-    updateDisplayData();
-  }, [statistiques]);
+    if (!globalIsRefreshing) { // Ne pas mettre à jour pendant un refresh global
+      updateDisplayData();
+    }
+  }, [statistiques, globalIsRefreshing]);
 
   useEffect(() => {
-  // Callback pour refresh dès qu'un changement impacte les stats
-  const handleDataChanged = () => {
-    refreshStatistiques(true); // 🔄 recharge les données depuis le backend
-  };
+    // Callback pour refresh dès qu'un changement impacte les stats
+    const handleDataChanged = () => {
+      if (!globalIsRefreshing) { // Ne pas déclencher pendant un refresh global
+        refreshStatistiques(true); // 🔄 recharge les données depuis le backend
+      }
+    };
 
-  // On écoute les événements liés aux changements
-  const offMedicamentCreated = eventBus.on(EVENTS.MEDECIN_CREATED, handleDataChanged);
-  const offMedicamentUpdated = eventBus.on(EVENTS.MEDECIN_UPDATED, handleDataChanged);
-  const offMedicamentDeleted = eventBus.on(EVENTS.MEDECIN_DELETED, handleDataChanged);
+    // On écoute les événements liés aux changements
+    const offMedicamentCreated = eventBus.on(EVENTS.MEDECIN_CREATED, handleDataChanged);
+    const offMedicamentUpdated = eventBus.on(EVENTS.MEDECIN_UPDATED, handleDataChanged);
+    const offMedicamentDeleted = eventBus.on(EVENTS.MEDECIN_DELETED, handleDataChanged);
 
-  const offOrdonnanceCreated = eventBus.on(EVENTS.ORDONNANCE_CREATED, handleDataChanged);
-  const offOrdonnanceUpdated = eventBus.on(EVENTS.ORDONNANCE_UPDATED, handleDataChanged);
-  const offOrdonnanceDeleted = eventBus.on(EVENTS.ORDONNANCE_DELETED, handleDataChanged);
+    const offOrdonnanceCreated = eventBus.on(EVENTS.ORDONNANCE_CREATED, handleDataChanged);
+    const offOrdonnanceUpdated = eventBus.on(EVENTS.ORDONNANCE_UPDATED, handleDataChanged);
+    const offOrdonnanceDeleted = eventBus.on(EVENTS.ORDONNANCE_DELETED, handleDataChanged);
 
-  // Ou plus simple : un seul listener global
-  const offDataChanged = eventBus.on(EVENTS.DATA_CHANGED, handleDataChanged);
+    // Ou plus simple : un seul listener global
+    const offDataChanged = eventBus.on(EVENTS.DATA_CHANGED, handleDataChanged);
 
-  // Nettoyage à l’unmount
-  return () => {
-    offMedicamentCreated();
-    offMedicamentUpdated();
-    offMedicamentDeleted();
-    offOrdonnanceCreated();
-    offOrdonnanceUpdated();
-    offOrdonnanceDeleted();
-    offDataChanged();
-  };
-}, [refreshStatistiques]);
-
+    // Nettoyage à l'unmount
+    return () => {
+      offMedicamentCreated();
+      offMedicamentUpdated();
+      offMedicamentDeleted();
+      offOrdonnanceCreated();
+      offOrdonnanceUpdated();
+      offOrdonnanceDeleted();
+      offDataChanged();
+    };
+  }, [refreshStatistiques, globalIsRefreshing]);
 
   // Fonction de refresh manuel
   const handleRefresh = async () => {
+    if (globalIsRefreshing) return; // Ne pas permettre le refresh manuel pendant un refresh global
+    
     try {
       await refreshStatistiques(true); // Force refresh
       console.log('✅ Statistiques actualisées manuellement');
@@ -134,7 +157,8 @@ const Statistiques = () => {
               <div className="mt-3">
                 <button
                   onClick={handleRefresh}
-                  className="bg-red-100 px-3 py-1 rounded text-red-800 text-sm hover:bg-red-200 transition-colors"
+                  disabled={globalIsRefreshing}
+                  className="bg-red-100 px-3 py-1 rounded text-red-800 text-sm hover:bg-red-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Réessayer
                 </button>
@@ -148,6 +172,18 @@ const Statistiques = () => {
 
   return (
     <div className="space-y-6">
+      {/* Indicateur de refresh global */}
+      {globalIsRefreshing && (
+        <div className="bg-blue-50 border border-blue-200 rounded-md p-3">
+          <div className="flex items-center justify-center space-x-2">
+            <Loader className="w-4 h-4 text-blue-600 animate-spin" />
+            <span className="text-blue-700 text-sm font-medium">
+              Mise à jour des statistiques en cours...
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900 font-serif">Tableau de bord</h2>
         <div className="flex items-center space-x-4">    
@@ -156,14 +192,14 @@ const Statistiques = () => {
             <span>Mis à jour: {lastRefresh.toLocaleTimeString()}</span>
             <button
               onClick={handleRefresh}
-              disabled={loading.statistiques}
+              disabled={loading.statistiques || globalIsRefreshing}
               className={`p-1 hover:bg-gray-100 rounded transition-colors ${
-                loading.statistiques ? 'opacity-50 cursor-not-allowed' : ''
+                loading.statistiques || globalIsRefreshing ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               title="Actualiser les statistiques"
             >
               <svg 
-                className={`w-4 h-4 ${loading.statistiques ? 'animate-spin' : ''}`} 
+                className={`w-4 h-4 ${loading.statistiques || globalIsRefreshing ? 'animate-spin' : ''}`} 
                 fill="none" 
                 stroke="currentColor" 
                 viewBox="0 0 24 24"
@@ -312,7 +348,7 @@ const Statistiques = () => {
       </div>
 
       {/* État de chargement overlay pendant le refresh */}
-      {loading.statistiques && statistiques.dashboard && (
+      {(loading.statistiques && statistiques.dashboard) && !globalIsRefreshing && (
         <div className="fixed top-4 right-4 bg-blue-100 border border-blue-200 rounded-md p-3 shadow-lg z-50">
           <div className="flex items-center space-x-2">
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
